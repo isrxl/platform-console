@@ -59,12 +59,6 @@ variable "deploy_jump_vm" {
   default     = false
 }
 
-variable "deployer_ip" {
-  type        = string
-  description = "Pipeline runner public egress IP, allowed through the Key Vault firewall to seed secrets. Set by the pipeline."
-  default     = ""
-}
-
 variable "tags" {
   type        = map(string)
   description = "Common tags applied to all resources."

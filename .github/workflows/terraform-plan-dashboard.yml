@@ -72,6 +72,7 @@ jobs:
             echo "opened=true" >>"$GITHUB_OUTPUT"
             echo "kv=$KV" >>"$GITHUB_OUTPUT"
             echo "rg=$RG" >>"$GITHUB_OUTPUT"
+            sleep 30
           fi
 
       - name: Terraform Init
@@ -92,7 +93,6 @@ jobs:
           terraform plan \
             -input=false \
             -var-file="${{ matrix.tfvars_file }}" \
-            -var="deployer_ip=${{ steps.ip.outputs.ip }}" \
             -out=tfplan \
             -detailed-exitcode \
             -no-color 2>&1 | tee plan-output.txt

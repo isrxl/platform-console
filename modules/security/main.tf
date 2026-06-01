@@ -42,7 +42,10 @@ resource "azurerm_key_vault" "this" {
   network_acls {
     default_action = "Deny"
     bypass         = "AzureServices"
-    ip_rules       = var.deployer_ip == "" ? [] : [var.deployer_ip]
+    # Runner access is granted ephemerally via az keyvault network-rule in CI
+    # (terraform-plan-dashboard / tf-apply). Do not manage deployer IPs here —
+    # changing ip_rules during plan breaks secret refresh mid-run.
+    ip_rules = []
   }
 }
 

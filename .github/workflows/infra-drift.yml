@@ -58,6 +58,12 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Detect runner egress IP
+        if: steps.filter.outputs.run == 'true'
+        id: ip
+        shell: bash
+        run: echo "ip=$(curl -s https://api.ipify.org)" >> "$GITHUB_OUTPUT"
+
       - name: Init
         if: steps.filter.outputs.run == 'true'
         shell: bash
@@ -67,6 +73,24 @@ jobs:
             -backend-config="storage_account_name=${{ secrets.TF_STATE_SA }}" \
             -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
             -backend-config="key=${{ matrix.environment }}/terraform.tfstate"
+
+      # Refresh reads Key Vault secrets over the public endpoint — allow this
+      # run's IP before plan, remove after (same pattern as tf-apply / plan dashboard).
+      - name: Allow runner through Key Vault firewall
+        if: steps.filter.outputs.run == 'true'
+        id: kv_access
+        shell: bash
+        run: |
+          KV="kv-cdvlplatcon-${{ matrix.environment }}-aue"
+          RG="rg-cdvlplatcon-webapp-${{ matrix.environment }}-aue"
+          if az keyvault show -g "$RG" -n "$KV" >/dev/null 2>&1; then
+            az keyvault network-rule add -g "$RG" --name "$KV" \
+              --ip-address "${{ steps.ip.outputs.ip }}" -o none
+            echo "opened=true" >> "$GITHUB_OUTPUT"
+            echo "kv=$KV" >> "$GITHUB_OUTPUT"
+            echo "rg=$RG" >> "$GITHUB_OUTPUT"
+            sleep 30
+          fi
 
       - name: Plan with detailed exit code
         if: steps.filter.outputs.run == 'true'
@@ -78,6 +102,15 @@ jobs:
             -var-file="${{ matrix.environment }}.tfvars" -no-color > drift.txt 2>&1
           echo "exit=$?" >> "$GITHUB_OUTPUT"
           cat drift.txt
+
+      - name: Close Key Vault firewall rule (temporary)
+        if: always() && steps.filter.outputs.run == 'true' && steps.kv_access.outputs.opened == 'true'
+        shell: bash
+        run: |
+          az keyvault network-rule remove \
+            -g "${{ steps.kv_access.outputs.rg }}" \
+            --name "${{ steps.kv_access.outputs.kv }}" \
+            --ip-address "${{ steps.ip.outputs.ip }}" -o none || true
 
       - name: Raise issue on drift
         if: steps.filter.outputs.run == 'true' && steps.drift.outputs.exit == '2'

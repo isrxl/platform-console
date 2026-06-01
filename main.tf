@@ -59,7 +59,6 @@ module "security" {
   kv_dns_zone_id       = module.networking.dns_zone_kv_id
   tenant_id            = data.azurerm_client_config.current.tenant_id
   deployer_object_id   = data.azurerm_client_config.current.object_id
-  deployer_ip          = var.deployer_ip
   db_connection_string = module.database.connection_string
   tags                 = local.tags
 }

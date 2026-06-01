@@ -71,6 +71,7 @@ runs:
           echo "opened=true" >> "$GITHUB_OUTPUT"
           echo "kv=$KV" >> "$GITHUB_OUTPUT"
           echo "rg=$RG" >> "$GITHUB_OUTPUT"
+          sleep 30
         fi
 
     - name: Terraform plan
