@@ -71,6 +71,7 @@ runs:
           echo "opened=true" >> "$GITHUB_OUTPUT"
           echo "kv=$KV" >> "$GITHUB_OUTPUT"
           echo "rg=$RG" >> "$GITHUB_OUTPUT"
+          sleep 30
         fi
 
     - name: Terraform plan
@@ -83,7 +84,6 @@ runs:
       run: |
         terraform plan -input=false \
           -var-file="${{ inputs.environment }}.tfvars" \
-          -var="deployer_ip=${{ steps.ip.outputs.ip }}" \
           -out=tfplan
 
     - name: Terraform apply

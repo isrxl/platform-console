@@ -58,12 +58,6 @@ variable "deployer_object_id" {
   description = "Object ID of the pipeline/service principal running Terraform, granted KV admin to seed secrets."
 }
 
-variable "deployer_ip" {
-  type        = string
-  description = "Public egress IP of the pipeline runner, allowed through the KV firewall so Terraform can seed secrets. Empty string = no IP rule."
-  default     = ""
-}
-
 variable "secret_expiration_date" {
   type        = string
   description = "RFC3339 expiration date stamped on seeded Key Vault secrets (satisfies expiry policy; surfaces in the Secret Expiry Monitor tab)."
