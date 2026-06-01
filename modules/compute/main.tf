@@ -13,7 +13,8 @@ locals {
     ENVIRONMENT                           = var.env
     AZURE_CLIENT_ID                       = var.identity_client_id
     APPLICATIONINSIGHTS_CONNECTION_STRING = var.app_insights_connection_string
-    SCM_DO_BUILD_DURING_DEPLOYMENT        = "true"
+    # Dependencies are installed into .python_packages in app-cd before zipping.
+    SCM_DO_BUILD_DURING_DEPLOYMENT        = "false"
     WEBSITES_PORT                         = "8000"
   }
 }

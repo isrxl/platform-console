@@ -53,7 +53,11 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - if: ${{ env.DEPLOY_DEV == 'true' }}
         name: Package app
-        run: cd app && zip -r ../app.zip . -x "tests/*" "*.pyc"
+        run: |
+          python -m pip install --upgrade pip
+          cd app
+          pip install -r requirements.txt --target ".python_packages/lib/site-packages" --upgrade
+          zip -r ../app.zip . -x "tests/*" "*.pyc" "__pycache__/*"
       - if: ${{ env.DEPLOY_DEV == 'true' }}
         name: Detect runner egress IP
         id: ip
@@ -62,15 +66,15 @@ jobs:
         name: Open temporary access window (runner IP only)
         id: window
         run: |
-          IP="${{ steps.ip.outputs.ip }}/32"
           PNA=$(az webapp show -g "$RG" -n "$APP_NAME" --query publicNetworkAccess -o tsv)
           echo "pna=${PNA:-Disabled}" >> "$GITHUB_OUTPUT"
-          az webapp update -g "$RG" -n "$APP_NAME" --set publicNetworkAccess=Enabled -o none
-          az webapp config access-restriction add -g "$RG" -n "$APP_NAME" \
-            --rule-name gh-runner --action Allow --ip-address "$IP" --priority 100 -o none
-          az webapp config access-restriction add -g "$RG" -n "$APP_NAME" --scm-site true \
-            --rule-name gh-runner-scm --action Allow --ip-address "$IP" --priority 100 -o none
-          sleep 20 # let the access rules propagate before hitting SCM
+          bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}"
+          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
+          bash .github/scripts/wait-for-scm.sh "$APP_NAME"
+      - if: ${{ env.DEPLOY_DEV == 'true' }}
+        name: Deploy
+        run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip
       - if: ${{ env.DEPLOY_DEV == 'true' }}
         name: Inject version app settings
         run: |
@@ -78,9 +82,6 @@ jobs:
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
-        name: Deploy
-        run: az webapp deploy -g "$RG" -n "$APP_NAME" --src-path app.zip --type zip
       - if: ${{ env.DEPLOY_DEV == 'true' }}
         name: Smoke test /health
         run: |
@@ -97,10 +98,7 @@ jobs:
             -d "{\"environment\":\"$ENV\",\"version\":\"${{ github.sha }}\",\"deployed_by\":\"pipeline\"}"
       - if: ${{ env.DEPLOY_DEV == 'true' && always() }}
         name: Close access window (restore private-only)
-        run: |
-          az webapp config access-restriction remove -g "$RG" -n "$APP_NAME" --rule-name gh-runner -o none || true
-          az webapp config access-restriction remove -g "$RG" -n "$APP_NAME" --scm-site true --rule-name gh-runner-scm -o none || true
-          az webapp update -g "$RG" -n "$APP_NAME" --set publicNetworkAccess="${{ steps.window.outputs.pna }}" -o none || true
+        run: bash .github/scripts/app-deploy-window.sh close "$RG" "$APP_NAME" "${{ steps.window.outputs.pna }}"
 
   deploy-test:
     needs: deploy-dev
@@ -121,7 +119,11 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - if: ${{ env.DEPLOY_TEST == 'true' }}
         name: Package app
-        run: cd app && zip -r ../app.zip . -x "tests/*" "*.pyc"
+        run: |
+          python -m pip install --upgrade pip
+          cd app
+          pip install -r requirements.txt --target ".python_packages/lib/site-packages" --upgrade
+          zip -r ../app.zip . -x "tests/*" "*.pyc" "__pycache__/*"
       - if: ${{ env.DEPLOY_TEST == 'true' }}
         name: Detect runner egress IP
         id: ip
@@ -130,15 +132,15 @@ jobs:
         name: Open temporary access window (runner IP only)
         id: window
         run: |
-          IP="${{ steps.ip.outputs.ip }}/32"
           PNA=$(az webapp show -g "$RG" -n "$APP_NAME" --query publicNetworkAccess -o tsv)
           echo "pna=${PNA:-Disabled}" >> "$GITHUB_OUTPUT"
-          az webapp update -g "$RG" -n "$APP_NAME" --set publicNetworkAccess=Enabled -o none
-          az webapp config access-restriction add -g "$RG" -n "$APP_NAME" \
-            --rule-name gh-runner --action Allow --ip-address "$IP" --priority 100 -o none
-          az webapp config access-restriction add -g "$RG" -n "$APP_NAME" --scm-site true \
-            --rule-name gh-runner-scm --action Allow --ip-address "$IP" --priority 100 -o none
-          sleep 20 # let the access rules propagate before hitting SCM
+          bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}"
+          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
+          bash .github/scripts/wait-for-scm.sh "$APP_NAME"
+      - if: ${{ env.DEPLOY_TEST == 'true' }}
+        name: Deploy
+        run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip
       - if: ${{ env.DEPLOY_TEST == 'true' }}
         name: Inject version app settings
         run: |
@@ -146,9 +148,6 @@ jobs:
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
-        name: Deploy
-        run: az webapp deploy -g "$RG" -n "$APP_NAME" --src-path app.zip --type zip
       - if: ${{ env.DEPLOY_TEST == 'true' }}
         name: Smoke + integration test
         run: |
@@ -166,10 +165,7 @@ jobs:
             -d "{\"environment\":\"$ENV\",\"version\":\"${{ github.sha }}\",\"deployed_by\":\"pipeline\"}"
       - if: ${{ env.DEPLOY_TEST == 'true' && always() }}
         name: Close access window (restore private-only)
-        run: |
-          az webapp config access-restriction remove -g "$RG" -n "$APP_NAME" --rule-name gh-runner -o none || true
-          az webapp config access-restriction remove -g "$RG" -n "$APP_NAME" --scm-site true --rule-name gh-runner-scm -o none || true
-          az webapp update -g "$RG" -n "$APP_NAME" --set publicNetworkAccess="${{ steps.window.outputs.pna }}" -o none || true
+        run: bash .github/scripts/app-deploy-window.sh close "$RG" "$APP_NAME" "${{ steps.window.outputs.pna }}"
 
   deploy-prod:
     needs: deploy-test
@@ -191,7 +187,11 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - if: ${{ env.DEPLOY_PROD == 'true' }}
         name: Package app
-        run: cd app && zip -r ../app.zip . -x "tests/*" "*.pyc"
+        run: |
+          python -m pip install --upgrade pip
+          cd app
+          pip install -r requirements.txt --target ".python_packages/lib/site-packages" --upgrade
+          zip -r ../app.zip . -x "tests/*" "*.pyc" "__pycache__/*"
       - if: ${{ env.DEPLOY_PROD == 'true' }}
         name: Detect runner egress IP
         id: ip
@@ -200,22 +200,17 @@ jobs:
         name: Open temporary access window (runner IP only)
         id: window
         run: |
-          IP="${{ steps.ip.outputs.ip }}/32"
-          # Capture original public-access state so we can restore it exactly.
           SLOT_PNA=$(az webapp show -g "$RG" -n "$APP_NAME" --slot "$SLOT" --query publicNetworkAccess -o tsv)
           PROD_PNA=$(az webapp show -g "$RG" -n "$APP_NAME" --query publicNetworkAccess -o tsv)
           echo "slot_pna=${SLOT_PNA:-Disabled}" >> "$GITHUB_OUTPUT"
           echo "prod_pna=${PROD_PNA:-Disabled}" >> "$GITHUB_OUTPUT"
-          # Staging slot: SCM (deploy) + main (smoke). Production slot: main (post-swap health).
-          az webapp update -g "$RG" -n "$APP_NAME" --slot "$SLOT" --set publicNetworkAccess=Enabled -o none
-          az webapp update -g "$RG" -n "$APP_NAME" --set publicNetworkAccess=Enabled -o none
-          az webapp config access-restriction add -g "$RG" -n "$APP_NAME" --slot "$SLOT" \
-            --rule-name gh-runner --action Allow --ip-address "$IP" --priority 100 -o none
-          az webapp config access-restriction add -g "$RG" -n "$APP_NAME" --slot "$SLOT" --scm-site true \
-            --rule-name gh-runner-scm --action Allow --ip-address "$IP" --priority 100 -o none
-          az webapp config access-restriction add -g "$RG" -n "$APP_NAME" \
-            --rule-name gh-runner --action Allow --ip-address "$IP" --priority 100 -o none
-          sleep 20 # let the access rules propagate before hitting SCM
+          bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}" "$SLOT"
+          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --slot "$SLOT" --settings \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
+          bash .github/scripts/wait-for-scm.sh "$APP_NAME" "$SLOT"
+      - if: ${{ env.DEPLOY_PROD == 'true' }}
+        name: Deploy to staging slot
+        run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip "$SLOT"
       - if: ${{ env.DEPLOY_PROD == 'true' }}
         name: Inject version app settings (staging slot)
         run: |
@@ -223,9 +218,6 @@ jobs:
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
-        name: Deploy to staging slot
-        run: az webapp deploy -g "$RG" -n "$APP_NAME" --slot "$SLOT" --src-path app.zip --type zip
       - if: ${{ env.DEPLOY_PROD == 'true' }}
         name: Smoke test staging slot
         run: |
@@ -261,8 +253,5 @@ jobs:
       - if: ${{ env.DEPLOY_PROD == 'true' && always() }}
         name: Close access window (restore private-only)
         run: |
-          az webapp config access-restriction remove -g "$RG" -n "$APP_NAME" --slot "$SLOT" --rule-name gh-runner -o none || true
-          az webapp config access-restriction remove -g "$RG" -n "$APP_NAME" --slot "$SLOT" --scm-site true --rule-name gh-runner-scm -o none || true
-          az webapp config access-restriction remove -g "$RG" -n "$APP_NAME" --rule-name gh-runner -o none || true
-          az webapp update -g "$RG" -n "$APP_NAME" --slot "$SLOT" --set publicNetworkAccess="${{ steps.window.outputs.slot_pna }}" -o none || true
-          az webapp update -g "$RG" -n "$APP_NAME" --set publicNetworkAccess="${{ steps.window.outputs.prod_pna }}" -o none || true
+          bash .github/scripts/app-deploy-window.sh close "$RG" "$APP_NAME" \
+            "${{ steps.window.outputs.prod_pna }}" "$SLOT" "${{ steps.window.outputs.slot_pna }}"
