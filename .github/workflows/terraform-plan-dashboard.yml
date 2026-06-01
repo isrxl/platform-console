@@ -55,6 +55,25 @@ jobs:
         with:
           terraform_wrapper: false
 
+      - name: Detect runner egress IP
+        id: ip
+        run: echo "ip=$(curl -s https://api.ipify.org)" >> "$GITHUB_OUTPUT"
+
+      # Existing vaults deny the runner by default. Refresh reads secrets over the
+      # public endpoint during plan — allow this run's IP before plan, remove after.
+      - name: Allow runner through Key Vault firewall
+        id: kv_access
+        run: |
+          KV="kv-cdvlplatcon-${{ matrix.environment }}-aue"
+          RG="rg-cdvlplatcon-webapp-${{ matrix.environment }}-aue"
+          if az keyvault show -g "$RG" -n "$KV" >/dev/null 2>&1; then
+            az keyvault network-rule add -g "$RG" --name "$KV" \
+              --ip-address "${{ steps.ip.outputs.ip }}" -o none
+            echo "opened=true" >>"$GITHUB_OUTPUT"
+            echo "kv=$KV" >>"$GITHUB_OUTPUT"
+            echo "rg=$RG" >>"$GITHUB_OUTPUT"
+          fi
+
       - name: Terraform Init
         run: |
           terraform init \
@@ -71,7 +90,9 @@ jobs:
         run: |
           set +e
           terraform plan \
+            -input=false \
             -var-file="${{ matrix.tfvars_file }}" \
+            -var="deployer_ip=${{ steps.ip.outputs.ip }}" \
             -out=tfplan \
             -detailed-exitcode \
             -no-color 2>&1 | tee plan-output.txt
@@ -82,6 +103,14 @@ jobs:
           fi
           exit 0
         continue-on-error: true
+
+      - name: Close Key Vault firewall rule (temporary)
+        if: always() && steps.kv_access.outputs.opened == 'true'
+        run: |
+          az keyvault network-rule remove \
+            -g "${{ steps.kv_access.outputs.rg }}" \
+            --name "${{ steps.kv_access.outputs.kv }}" \
+            --ip-address "${{ steps.ip.outputs.ip }}" -o none || true
 
       - name: Parse Plan
         id: parse
