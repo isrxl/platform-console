@@ -199,9 +199,8 @@ Versioning: `APP_VERSION` (Git SHA), `SEMANTIC_VERSION` (latest tag), and
 `DEPLOYED_AT` are injected as app settings at deploy time; the pipeline records
 each deploy via `POST /api/deployments`.
 
-The plan dashboard passes `-var="deployer_ip=<runner IP>"` (same as `infra-cd`).
-For environments where Key Vault already exists, it also **temporarily** adds the
-runner IP to the vault firewall for the duration of the plan, then removes it —
+For environments where Key Vault already exists, CI workflows **temporarily** add the
+runner IP to the vault firewall for the duration of plan/apply, then remove it —
 otherwise Terraform cannot refresh `azurerm_key_vault_secret` during plan.
 
 ---
