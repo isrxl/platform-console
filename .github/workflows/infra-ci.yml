@@ -1,0 +1,59 @@
+name: infra-ci
+
+on:
+  pull_request:
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".github/workflows/infra-ci.yml"
+
+# Static quality gate only (fmt / validate / tfsec / checkov). The plan preview
+# now lives in terraform-plan-dashboard.yml so there is a single source of plan
+# truth and no concurrent state-lock contention.
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.9.5"
+
+jobs:
+  validate:
+    name: Validate and scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          soft_fail: false
+
+      # Skipped checks are deliberate trade-offs for this single-region, cost-
+      # constrained lab (documented in README "Security scanning"). They fall into:
+      #   - HA/zone-redundancy/failover (cost): CKV_AZURE_212, 225, 229
+      #   - Teardown-friendly KV (no purge protection): CKV_AZURE_42, 110
+      #   - SQL auth by design, not Entra-only (handoff §12): CKV2_AZURE_27
+      #   - SQL auditing/VA need extra storage, out of lab scope: CKV_AZURE_23, 24, CKV2_AZURE_2
+      #   - Ephemeral jump VM: CKV_AZURE_50, 151
+      #   - Not applicable to a private, code-deployed app: CKV_AZURE_13, 17, 88, 224
+      - name: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
+          soft_fail: false
+          skip_check: CKV_AZURE_212,CKV_AZURE_225,CKV_AZURE_229,CKV_AZURE_42,CKV_AZURE_110,CKV2_AZURE_27,CKV_AZURE_23,CKV_AZURE_24,CKV2_AZURE_2,CKV_AZURE_50,CKV_AZURE_151,CKV_AZURE_13,CKV_AZURE_17,CKV_AZURE_88,CKV_AZURE_224

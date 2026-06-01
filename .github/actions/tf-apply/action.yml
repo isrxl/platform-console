@@ -1,0 +1,80 @@
+name: tf-apply
+description: Init, plan, and apply Terraform for a single environment (OIDC auth).
+
+inputs:
+  environment:
+    description: Environment name (dev / test / prod)
+    required: true
+  client_id:
+    description: Azure AD application (client) ID for OIDC login
+    required: true
+  tenant_id:
+    description: Azure AD tenant ID
+    required: true
+  subscription_id:
+    description: Azure subscription ID
+    required: true
+  tf_state_rg:
+    required: true
+  tf_state_sa:
+    required: true
+  tf_state_container:
+    required: true
+  tf_version:
+    required: false
+    default: "1.9.5"
+
+runs:
+  using: composite
+  steps:
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.tf_version }}
+
+    - name: Azure login (OIDC)
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.client_id }}
+        tenant-id: ${{ inputs.tenant_id }}
+        subscription-id: ${{ inputs.subscription_id }}
+
+    - name: Detect runner egress IP
+      id: ip
+      shell: bash
+      run: echo "ip=$(curl -s https://api.ipify.org)" >> "$GITHUB_OUTPUT"
+
+    - name: Terraform init
+      shell: bash
+      env:
+        ARM_USE_OIDC: "true"
+        ARM_CLIENT_ID: ${{ inputs.client_id }}
+        ARM_TENANT_ID: ${{ inputs.tenant_id }}
+        ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+      run: |
+        terraform init -reconfigure \
+          -backend-config="resource_group_name=${{ inputs.tf_state_rg }}" \
+          -backend-config="storage_account_name=${{ inputs.tf_state_sa }}" \
+          -backend-config="container_name=${{ inputs.tf_state_container }}" \
+          -backend-config="key=${{ inputs.environment }}/terraform.tfstate"
+
+    - name: Terraform plan
+      shell: bash
+      env:
+        ARM_USE_OIDC: "true"
+        ARM_CLIENT_ID: ${{ inputs.client_id }}
+        ARM_TENANT_ID: ${{ inputs.tenant_id }}
+        ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+      run: |
+        terraform plan -input=false \
+          -var-file="${{ inputs.environment }}.tfvars" \
+          -var="deployer_ip=${{ steps.ip.outputs.ip }}" \
+          -out=tfplan
+
+    - name: Terraform apply
+      shell: bash
+      env:
+        ARM_USE_OIDC: "true"
+        ARM_CLIENT_ID: ${{ inputs.client_id }}
+        ARM_TENANT_ID: ${{ inputs.tenant_id }}
+        ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+      run: terraform apply -input=false -auto-approve tfplan

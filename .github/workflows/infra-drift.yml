@@ -1,0 +1,103 @@
+name: infra-drift
+
+on:
+  schedule:
+    - cron: "0 20 * * *" # 6am AEST daily
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to check"
+        required: false
+        type: choice
+        options: [all, dev, test, prod]
+        default: "all"
+
+permissions:
+  id-token: write # required to request the GitHub OIDC token
+  contents: read
+  issues: write
+
+env:
+  TF_VERSION: "1.9.5"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, test, prod]
+    steps:
+      - name: Skip if not selected
+        id: filter
+        shell: bash
+        run: |
+          SEL="${{ github.event.inputs.environment || 'all' }}"
+          if [[ "$SEL" == "all" || "$SEL" == "${{ matrix.environment }}" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.filter.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - if: steps.filter.outputs.run == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - if: steps.filter.outputs.run == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Init
+        if: steps.filter.outputs.run == 'true'
+        shell: bash
+        run: |
+          terraform init -reconfigure \
+            -backend-config="resource_group_name=${{ secrets.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.TF_STATE_SA }}" \
+            -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ matrix.environment }}/terraform.tfstate"
+
+      - name: Plan with detailed exit code
+        if: steps.filter.outputs.run == 'true'
+        id: drift
+        shell: bash
+        run: |
+          set +e
+          terraform plan -input=false -detailed-exitcode \
+            -var-file="${{ matrix.environment }}.tfvars" -no-color > drift.txt 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          cat drift.txt
+
+      - name: Raise issue on drift
+        if: steps.filter.outputs.run == 'true' && steps.drift.outputs.exit == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let txt = fs.readFileSync('drift.txt','utf8');
+            if (txt.length > 60000) txt = txt.slice(0, 60000) + '\n... truncated ...';
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `Infrastructure drift detected: ${{ matrix.environment }}`,
+              labels: ['drift'],
+              body: `Drift detected in **${{ matrix.environment }}** on ${new Date().toISOString()}.\n\n\`\`\`\n${txt}\n\`\`\``
+            });
+
+      - name: Fail job on drift
+        if: steps.filter.outputs.run == 'true' && steps.drift.outputs.exit == '2'
+        run: exit 1
+
+      - name: Fail job on plan error
+        if: steps.filter.outputs.run == 'true' && steps.drift.outputs.exit == '1'
+        run: exit 1

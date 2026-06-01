@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Platform Console</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: { ink: "#0b1020", panel: "#11172b" } } } };
+  </script>
+</head>
+<body class="h-full bg-slate-950 text-slate-200 antialiased">
+  <div class="min-h-full">
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-ink/80 backdrop-blur">
+      <div class="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="h-9 w-9 rounded-lg bg-indigo-500/20 ring-1 ring-indigo-400/40 grid place-items-center">
+            <span class="text-indigo-300 font-bold">PC</span>
+          </div>
+          <div>
+            <h1 class="text-lg font-semibold text-white">Platform Console</h1>
+            <p class="text-xs text-slate-400">Azure internal platform management</p>
+          </div>
+        </div>
+        <div class="text-right text-xs leading-5">
+          <div><span class="text-slate-400">env</span>
+            <span class="ml-1 rounded bg-slate-800 px-2 py-0.5 font-mono text-indigo-300">{{ environment }}</span>
+          </div>
+          <div class="text-slate-400">
+            {{ app_version }}{% if semantic_version %} · {{ semantic_version }}{% endif %}
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="mx-auto max-w-6xl px-6 pt-6">
+      <div class="flex flex-wrap gap-2" id="tabs">
+        <button data-tab="health" class="tab-btn">Platform Health</button>
+        <button data-tab="flags" class="tab-btn">Feature Flags</button>
+        <button data-tab="deployments" class="tab-btn">Deployment History</button>
+        <button data-tab="secrets" class="tab-btn">Secret Expiry</button>
+        <button data-tab="releases" class="tab-btn">Release Notes</button>
+      </div>
+    </nav>
+
+    <main class="mx-auto max-w-6xl px-6 py-6 space-y-4">
+      <section id="tab-health" class="tab-panel">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-base font-semibold text-white">Platform Health</h2>
+          <span class="text-xs text-slate-500">auto-refresh 30s</span>
+        </div>
+        <div id="health-grid" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"></div>
+      </section>
+
+      <section id="tab-flags" class="tab-panel hidden">
+        <h2 class="text-base font-semibold text-white mb-3">Feature Flags</h2>
+        <div id="flags-list" class="space-y-2"></div>
+      </section>
+
+      <section id="tab-deployments" class="tab-panel hidden">
+        <h2 class="text-base font-semibold text-white mb-3">Deployment History</h2>
+        <div class="overflow-x-auto rounded-lg ring-1 ring-slate-800">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-900 text-slate-400">
+              <tr>
+                <th class="px-3 py-2 text-left">Env</th>
+                <th class="px-3 py-2 text-left">Version (SHA)</th>
+                <th class="px-3 py-2 text-left">Semantic</th>
+                <th class="px-3 py-2 text-left">Deployed At</th>
+                <th class="px-3 py-2 text-left">By</th>
+                <th class="px-3 py-2 text-left">Status</th>
+              </tr>
+            </thead>
+            <tbody id="deployments-body" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-secrets" class="tab-panel hidden">
+        <h2 class="text-base font-semibold text-white mb-3">Secret Expiry Monitor</h2>
+        <div id="secrets-list" class="space-y-2"></div>
+      </section>
+
+      <section id="tab-releases" class="tab-panel hidden">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-base font-semibold text-white">Release Notes</h2>
+          <button id="new-release-btn" class="rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-400">New release</button>
+        </div>
+        <form id="release-form" class="hidden mb-4 space-y-2 rounded-lg bg-panel p-4 ring-1 ring-slate-800">
+          <div class="grid gap-2 sm:grid-cols-2">
+            <input id="r-version" placeholder="Version (Git SHA)" class="field" />
+            <input id="r-semver" placeholder="Semantic version (v1.2.0)" class="field" />
+          </div>
+          <input id="r-author" placeholder="Published by" class="field w-full" />
+          <textarea id="r-content" placeholder="Release summary" rows="3" class="field w-full"></textarea>
+          <div class="flex gap-2">
+            <button type="submit" class="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-400">Publish</button>
+            <button type="button" id="cancel-release" class="rounded-md bg-slate-700 px-3 py-1.5 text-sm">Cancel</button>
+          </div>
+        </form>
+        <div id="releases-list" class="space-y-3"></div>
+      </section>
+    </main>
+  </div>
+
+  <style>
+    .tab-btn { @apply rounded-md px-3 py-1.5 text-sm font-medium text-slate-400 hover:text-white; }
+    .field { @apply rounded-md bg-slate-900 px-3 py-2 text-sm ring-1 ring-slate-700 focus:outline-none focus:ring-indigo-500; }
+  </style>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const dot = (c) => ({ green: "bg-emerald-400", red: "bg-rose-500", yellow: "bg-amber-400", amber: "bg-amber-400" }[c] || "bg-slate-500");
+
+    function setActiveTab(name) {
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
+      $("#tab-" + name).classList.remove("hidden");
+      document.querySelectorAll(".tab-btn").forEach((b) => {
+        const on = b.dataset.tab === name;
+        b.classList.toggle("bg-slate-800", on);
+        b.classList.toggle("text-white", on);
+      });
+      loaders[name] && loaders[name]();
+    }
+
+    async function jget(url) { const r = await fetch(url); return r.json(); }
+    async function jpost(url, body) {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      return r.json();
+    }
+
+    const loaders = {
+      async health() {
+        const data = await jget("/api/health");
+        $("#health-grid").innerHTML = Object.entries(data.checks).map(([k, v]) => `
+          <div class="rounded-lg bg-panel p-4 ring-1 ring-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="h-2.5 w-2.5 rounded-full ${dot(v.status)}"></span>
+              <span class="font-medium capitalize text-white">${k.replace(/_/g, " ")}</span>
+            </div>
+            <p class="mt-1 text-xs text-slate-400 break-words">${v.detail}</p>
+          </div>`).join("");
+      },
+      async flags() {
+        const flags = await jget("/api/flags");
+        $("#flags-list").innerHTML = flags.map((f) => `
+          <div class="flex items-center justify-between rounded-lg bg-panel p-3 ring-1 ring-slate-800">
+            <div>
+              <div class="font-medium text-white">${f.flag_name}</div>
+              <div class="text-xs text-slate-500">updated ${f.updated_at || "-"} by ${f.updated_by || "-"}</div>
+            </div>
+            <button onclick="toggleFlag(${f.id}, ${!f.is_enabled})"
+              class="h-6 w-11 rounded-full ${f.is_enabled ? "bg-emerald-500" : "bg-slate-600"} relative transition">
+              <span class="absolute top-0.5 ${f.is_enabled ? "right-0.5" : "left-0.5"} h-5 w-5 rounded-full bg-white"></span>
+            </button>
+          </div>`).join("") || emptyMsg("No flags found");
+      },
+      async deployments() {
+        const rows = await jget("/api/deployments");
+        $("#deployments-body").innerHTML = rows.map((d) => `
+          <tr class="text-slate-300">
+            <td class="px-3 py-2 font-mono text-indigo-300">${d.environment}</td>
+            <td class="px-3 py-2 font-mono">${(d.version || "").slice(0, 12)}</td>
+            <td class="px-3 py-2">${d.semantic_version || "-"}</td>
+            <td class="px-3 py-2">${d.deployed_at || "-"}</td>
+            <td class="px-3 py-2">${d.deployed_by || "-"}</td>
+            <td class="px-3 py-2"><span class="rounded bg-slate-800 px-2 py-0.5 text-xs">${d.status}</span></td>
+          </tr>`).join("") || `<tr><td colspan="6" class="px-3 py-6 text-center text-slate-500">No deployments recorded</td></tr>`;
+      },
+      async secrets() {
+        const rows = await jget("/api/secrets/expiry");
+        $("#secrets-list").innerHTML = rows.map((s) => `
+          <div class="flex items-center justify-between rounded-lg bg-panel p-3 ring-1 ring-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="h-2.5 w-2.5 rounded-full ${dot(s.status)}"></span>
+              <span class="font-mono text-white">${s.name}</span>
+            </div>
+            <div class="text-xs text-slate-400">${s.expires_on ? (s.days_remaining + " days") : "no expiry set"}</div>
+          </div>`).join("") || emptyMsg("No secrets found");
+      },
+      async releases() {
+        const rows = await jget("/api/releases");
+        const tag = (t) => ({ feature: "bg-emerald-500/20 text-emerald-300", fix: "bg-sky-500/20 text-sky-300", note: "bg-slate-600/40 text-slate-300", breaking: "bg-rose-500/20 text-rose-300" }[t] || "bg-slate-600/40 text-slate-300");
+        $("#releases-list").innerHTML = rows.map((r) => `
+          <div class="rounded-lg bg-panel p-4 ring-1 ring-slate-800">
+            <div class="flex items-center justify-between">
+              <div class="font-semibold text-white">${r.semantic_version} <span class="font-mono text-xs text-slate-500">${(r.version || "").slice(0, 12)}</span></div>
+              <div class="text-xs text-slate-500">${r.published_at || ""} · ${r.published_by}</div>
+            </div>
+            <p class="mt-1 text-sm text-slate-300">${r.content}</p>
+            <div class="mt-2 space-y-1">
+              ${(r.items || []).map((i) => `<div class="text-sm"><span class="mr-2 rounded px-1.5 py-0.5 text-xs ${tag(i.item_type)}">${i.item_type}</span>${i.description}</div>`).join("")}
+            </div>
+          </div>`).join("") || emptyMsg("No release notes yet");
+      },
+    };
+
+    function emptyMsg(t) { return `<div class="rounded-lg bg-panel p-6 text-center text-slate-500 ring-1 ring-slate-800">${t}</div>`; }
+
+    async function toggleFlag(id, enabled) {
+      await jpost("/api/flags/" + id, { is_enabled: enabled });
+      loaders.flags();
+    }
+
+    // Release form
+    $("#new-release-btn").onclick = () => $("#release-form").classList.toggle("hidden");
+    $("#cancel-release").onclick = () => $("#release-form").classList.add("hidden");
+    $("#release-form").onsubmit = async (e) => {
+      e.preventDefault();
+      await jpost("/api/releases", {
+        version: $("#r-version").value,
+        semantic_version: $("#r-semver").value,
+        content: $("#r-content").value,
+        published_by: $("#r-author").value,
+        items: [],
+      });
+      $("#release-form").reset();
+      $("#release-form").classList.add("hidden");
+      loaders.releases();
+    };
+
+    document.querySelectorAll(".tab-btn").forEach((b) => (b.onclick = () => setActiveTab(b.dataset.tab)));
+    setActiveTab("health");
+    setInterval(() => { if (!$("#tab-health").classList.contains("hidden")) loaders.health(); }, 30000);
+  </script>
+</body>
+</html>

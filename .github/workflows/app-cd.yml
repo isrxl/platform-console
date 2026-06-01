@@ -1,0 +1,156 @@
+name: app-cd
+
+# NOTE ON PRIVATE NETWORKING:
+# The App Service has its public endpoint disabled — it is reachable only from
+# inside the VNet. A GitHub-hosted runner therefore cannot reach the app's HTTP
+# or SCM endpoints directly. For a real private deployment, run these jobs on a
+# self-hosted runner that is VNet-integrated (set `runs-on` accordingly), or use
+# the documented temporary scm IP-allow window. The steps below use the Azure
+# control plane (`az webapp deploy`) and are written to work from such a runner.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/app-cd.yml"
+  schedule:
+    - cron: "0 22 * * 0" # 8am AEST every Sunday
+  workflow_dispatch:
+
+permissions:
+  id-token: write # required to request the GitHub OIDC token
+  contents: read
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      APP_NAME: app-cdvlplatcon-webapp-dev-aue
+      RG: rg-cdvlplatcon-webapp-dev-aue
+      ENV: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Package app
+        run: cd app && zip -r ../app.zip . -x "tests/*" "*.pyc"
+      - name: Inject version app settings
+        run: |
+          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
+            APP_VERSION="${{ github.sha }}" \
+            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
+            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Deploy
+        run: az webapp deploy -g "$RG" -n "$APP_NAME" --src-path app.zip --type zip
+      - name: Smoke test /health
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "https://${APP_NAME}.azurewebsites.net/health"; then exit 0; fi
+            sleep 30
+          done
+          echo "Health check failed" && exit 1
+      - name: Record deployment
+        run: |
+          curl -fsS -X POST "https://${APP_NAME}.azurewebsites.net/api/deployments" \
+            -H "Content-Type: application/json" \
+            -d "{\"environment\":\"$ENV\",\"version\":\"${{ github.sha }}\",\"deployed_by\":\"pipeline\"}"
+
+  deploy-test:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: test
+    env:
+      APP_NAME: app-cdvlplatcon-webapp-test-aue
+      RG: rg-cdvlplatcon-webapp-test-aue
+      ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Package app
+        run: cd app && zip -r ../app.zip . -x "tests/*" "*.pyc"
+      - name: Inject version app settings
+        run: |
+          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
+            APP_VERSION="${{ github.sha }}" \
+            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
+            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Deploy
+        run: az webapp deploy -g "$RG" -n "$APP_NAME" --src-path app.zip --type zip
+      - name: Smoke + integration test
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "https://${APP_NAME}.azurewebsites.net/health"; then break; fi
+            sleep 30
+          done
+          curl -fsS "https://${APP_NAME}.azurewebsites.net/api/health"
+          curl -fsS "https://${APP_NAME}.azurewebsites.net/api/flags"
+      - name: Record deployment
+        run: |
+          curl -fsS -X POST "https://${APP_NAME}.azurewebsites.net/api/deployments" \
+            -H "Content-Type: application/json" \
+            -d "{\"environment\":\"$ENV\",\"version\":\"${{ github.sha }}\",\"deployed_by\":\"pipeline\"}"
+
+  deploy-prod:
+    needs: deploy-test
+    runs-on: ubuntu-latest
+    environment: prod
+    env:
+      APP_NAME: app-cdvlplatcon-webapp-prod-aue
+      RG: rg-cdvlplatcon-webapp-prod-aue
+      SLOT: staging
+      ENV: prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Package app
+        run: cd app && zip -r ../app.zip . -x "tests/*" "*.pyc"
+      - name: Inject version app settings (staging slot)
+        run: |
+          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --slot "$SLOT" --settings \
+            APP_VERSION="${{ github.sha }}" \
+            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
+            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Deploy to staging slot
+        run: az webapp deploy -g "$RG" -n "$APP_NAME" --slot "$SLOT" --src-path app.zip --type zip
+      - name: Smoke test staging slot
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "https://${APP_NAME}-${SLOT}.azurewebsites.net/health"; then exit 0; fi
+            sleep 30
+          done
+          echo "Staging smoke test failed — aborting before swap" && exit 1
+      - name: Swap staging into production
+        run: az webapp deployment slot swap -g "$RG" -n "$APP_NAME" --slot "$SLOT" --target-slot production
+      - name: Post-swap health check (5 min, 10 x 30s)
+        id: postswap
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "https://${APP_NAME}.azurewebsites.net/health"; then
+              echo "ok" && exit 0
+            fi
+            sleep 30
+          done
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          exit 1
+      - name: Rollback on post-swap failure
+        if: failure() && steps.postswap.outputs.failed == 'true'
+        run: az webapp deployment slot swap -g "$RG" -n "$APP_NAME" --slot "$SLOT" --target-slot production
+      - name: Record deployment
+        if: success()
+        run: |
+          curl -fsS -X POST "https://${APP_NAME}.azurewebsites.net/api/deployments" \
+            -H "Content-Type: application/json" \
+            -d "{\"environment\":\"$ENV\",\"version\":\"${{ github.sha }}\",\"deployed_by\":\"pipeline\"}"
