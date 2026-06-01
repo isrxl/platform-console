@@ -1,0 +1,10 @@
+env                   = "test"
+project               = "cdvlplatcon"
+location              = "australiaeast"
+vnet_address_space    = ["10.2.0.0/16"]
+app_subnet_prefix     = "10.2.1.0/24"
+pe_subnet_prefix      = "10.2.2.0/24"
+inbound_subnet_prefix = "10.2.3.0/24"
+jump_subnet_prefix    = ""
+app_service_sku       = "P0v4"
+deploy_jump_vm        = false

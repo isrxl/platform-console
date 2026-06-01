@@ -1,0 +1,88 @@
+name: infra-cd
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".github/workflows/infra-cd.yml"
+
+permissions:
+  id-token: write # required to request the GitHub OIDC token
+  contents: read
+
+# The pipeline owns the deployment decision — not an operator running Terraform.
+env:
+  TF_VERSION: "1.9.5"
+  DEPLOY_DEV: "false"
+  DEPLOY_TEST: "false"
+  DEPLOY_PROD: "true"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  deploy-dev:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    environment: dev
+    outputs:
+      ran: ${{ steps.gate.outputs.ran }}
+    steps:
+      - id: gate
+        run: echo "ran=${DEPLOY_DEV}" >> "$GITHUB_OUTPUT"
+      - if: ${{ env.DEPLOY_DEV == 'true' }}
+        uses: actions/checkout@v4
+      - if: ${{ env.DEPLOY_DEV == 'true' }}
+        uses: ./.github/actions/tf-apply
+        with:
+          environment: dev
+          client_id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant_id: ${{ vars.AZURE_TENANT_ID }}
+          subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          tf_state_rg: ${{ secrets.TF_STATE_RG }}
+          tf_state_sa: ${{ secrets.TF_STATE_SA }}
+          tf_state_container: ${{ secrets.TF_STATE_CONTAINER }}
+          tf_version: ${{ env.TF_VERSION }}
+
+  deploy-test:
+    needs: deploy-dev
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - if: ${{ env.DEPLOY_TEST == 'true' }}
+        uses: actions/checkout@v4
+      - if: ${{ env.DEPLOY_TEST == 'true' }}
+        uses: ./.github/actions/tf-apply
+        with:
+          environment: test
+          client_id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant_id: ${{ vars.AZURE_TENANT_ID }}
+          subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          tf_state_rg: ${{ secrets.TF_STATE_RG }}
+          tf_state_sa: ${{ secrets.TF_STATE_SA }}
+          tf_state_container: ${{ secrets.TF_STATE_CONTAINER }}
+          tf_version: ${{ env.TF_VERSION }}
+
+  deploy-prod:
+    needs: deploy-test
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - if: ${{ env.DEPLOY_PROD == 'true' }}
+        uses: actions/checkout@v4
+      - if: ${{ env.DEPLOY_PROD == 'true' }}
+        uses: ./.github/actions/tf-apply
+        with:
+          environment: prod
+          client_id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant_id: ${{ vars.AZURE_TENANT_ID }}
+          subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          tf_state_rg: ${{ secrets.TF_STATE_RG }}
+          tf_state_sa: ${{ secrets.TF_STATE_SA }}
+          tf_state_container: ${{ secrets.TF_STATE_CONTAINER }}
+          tf_version: ${{ env.TF_VERSION }}
