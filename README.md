@@ -142,6 +142,7 @@ trade-off for this single-region, cost-constrained lab, not an oversight:
 | SQL auth (not Entra-only)                      | `CKV2_AZURE_27`                   | Documented design choice; credential lives only in Key Vault |
 | SQL auditing / VA                              | `CKV_AZURE_23/24`, `CKV2_AZURE_2` | Require extra storage; out of lab scope                      |
 | Ephemeral jump VM                              | `CKV_AZURE_50/151`                | Created only for validation, then destroyed                  |
+| Key Vault public access (deny-by-default ACL)  | `CKV_AZURE_189`                   | Public endpoint kept for ephemeral CI firewall rules; app uses private endpoint |
 | Not applicable to a private, code-deployed app | `CKV_AZURE_13/17/88/224`          | Easy Auth / client certs / Azure Files / Ledger unused       |
 
 
