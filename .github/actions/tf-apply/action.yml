@@ -84,6 +84,7 @@ runs:
       run: |
         terraform plan -input=false \
           -var-file="${{ inputs.environment }}.tfvars" \
+          -var="deployer_ip=${{ steps.ip.outputs.ip }}" \
           -out=tfplan
 
     - name: Terraform apply
