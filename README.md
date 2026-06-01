@@ -123,6 +123,24 @@ The `security` module consumes that output to seed the `db-connection-string`
 Key Vault secret. This keeps SQL concerns in one place and the dependency graph
 linear: `networking → database → security → compute`.
 
+### Security scanning (tfsec + checkov)
+
+`infra-ci` runs **tfsec** and **checkov** as hard gates. A small set of checkov
+checks is skipped (see `skip_check` in `infra-ci.yml`) — each is a conscious
+trade-off for this single-region, cost-constrained lab, not an oversight:
+
+| Category | Checks | Rationale |
+|---|---|---|
+| HA / zone redundancy / failover | `CKV_AZURE_212/225/229` | Single-region lab; multi-AZ adds cost |
+| Teardown-friendly Key Vault | `CKV_AZURE_42/110` | Purge protection blocks clean lab teardown |
+| SQL auth (not Entra-only) | `CKV2_AZURE_27` | Documented design choice; credential lives only in Key Vault |
+| SQL auditing / VA | `CKV_AZURE_23/24`, `CKV2_AZURE_2` | Require extra storage; out of lab scope |
+| Ephemeral jump VM | `CKV_AZURE_50/151` | Created only for validation, then destroyed |
+| Not applicable to a private, code-deployed app | `CKV_AZURE_13/17/88/224` | Easy Auth / client certs / Azure Files / Ledger unused |
+
+Findings that were cheap and correct to fix (Key Vault secret **expiry** and
+**content-type**) are addressed in code rather than skipped.
+
 ### Naming convention
 
 Resources follow `{type}-{project}-webapp-{env}-{loc}` (e.g.

@@ -64,6 +64,12 @@ variable "deployer_ip" {
   default     = ""
 }
 
+variable "secret_expiration_date" {
+  type        = string
+  description = "RFC3339 expiration date stamped on seeded Key Vault secrets (satisfies expiry policy; surfaces in the Secret Expiry Monitor tab)."
+  default     = "2027-12-31T23:59:59Z"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Tags applied to all resources."

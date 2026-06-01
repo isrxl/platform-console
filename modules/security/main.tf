@@ -86,17 +86,21 @@ resource "azurerm_private_endpoint" "kv" {
 # --- Secrets ---------------------------------------------------------------
 
 resource "azurerm_key_vault_secret" "app_secret" {
-  name         = "app-secret"
-  value        = var.app_secret_value
-  key_vault_id = azurerm_key_vault.this.id
+  name            = "app-secret"
+  value           = var.app_secret_value
+  key_vault_id    = azurerm_key_vault.this.id
+  content_type    = "text/plain"
+  expiration_date = var.secret_expiration_date
 
   depends_on = [azurerm_role_assignment.deployer_admin]
 }
 
 resource "azurerm_key_vault_secret" "db_connection_string" {
-  name         = "db-connection-string"
-  value        = var.db_connection_string
-  key_vault_id = azurerm_key_vault.this.id
+  name            = "db-connection-string"
+  value           = var.db_connection_string
+  key_vault_id    = azurerm_key_vault.this.id
+  content_type    = "odbc-connection-string"
+  expiration_date = var.secret_expiration_date
 
   depends_on = [azurerm_role_assignment.deployer_admin]
 }
