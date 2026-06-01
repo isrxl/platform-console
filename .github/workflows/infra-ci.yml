@@ -73,7 +73,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          OUT=""
           for ENV in dev test prod; do
             echo "::group::plan $ENV"
             terraform init -reconfigure \
@@ -81,24 +80,73 @@ jobs:
               -backend-config="storage_account_name=${{ secrets.TF_STATE_SA }}" \
               -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
               -backend-config="key=${ENV}/terraform.tfstate"
-            terraform plan -input=false -var-file="${ENV}.tfvars" -no-color | tee "plan-${ENV}.txt"
+            terraform plan -input=false -var-file="${ENV}.tfvars" -no-color -out="tfplan-${ENV}"
+            # Human-readable plan (for the collapsed "full plan" block)...
+            terraform show -no-color "tfplan-${ENV}" > "plan-${ENV}.txt"
+            # ...and the machine-readable form we summarise from.
+            terraform show -json "tfplan-${ENV}" > "plan-${ENV}.json"
             echo "::endgroup::"
           done
 
-      - name: Post plans as PR comment
+      - name: Post/update plan summary comment
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            let body = '## Terraform plan summary\n';
-            for (const env of ['dev','test','prod']) {
-              const file = `plan-${env}.txt`;
-              let txt = fs.existsSync(file) ? fs.readFileSync(file,'utf8') : 'plan did not run';
-              if (txt.length > 60000) txt = txt.slice(0, 60000) + '\n... truncated ...';
-              body += `\n<details><summary>${env}</summary>\n\n\`\`\`\n${txt}\n\`\`\`\n</details>\n`;
+            const MARKER = '<!-- tf-plan-summary -->';
+            const envs = ['dev', 'test', 'prod'];
+            const symbol = (actions) => {
+              const s = new Set(actions);
+              if (s.has('create') && s.has('delete')) return '±'; // replace
+              if (s.has('create')) return '+';
+              if (s.has('update')) return '~';
+              if (s.has('delete')) return '-';
+              return '';
+            };
+            let table = '| Env | Add | Change | Destroy |\n|---|---:|---:|---:|\n';
+            let sections = '';
+            for (const env of envs) {
+              const jf = `plan-${env}.json`;
+              if (!fs.existsSync(jf)) {
+                table += `| **${env}** | — | — | ⚠️ plan failed |\n`;
+                continue;
+              }
+              const plan = JSON.parse(fs.readFileSync(jf, 'utf8'));
+              const changes = (plan.resource_changes || []).filter((r) => {
+                const a = r.change.actions;
+                return !(a.length === 1 && (a[0] === 'no-op' || a[0] === 'read'));
+              });
+              let add = 0, chg = 0, del = 0;
+              const lines = [];
+              for (const r of changes) {
+                const sym = symbol(r.change.actions);
+                if (sym === '+') add++;
+                else if (sym === '~') chg++;
+                else if (sym === '-') del++;
+                else if (sym === '±') { add++; del++; }
+                lines.push(`${sym} ${r.address}`);
+              }
+              table += `| **${env}** | ${add} | ${chg} | ${del} |\n`;
+              const list = lines.length ? lines.sort().join('\n') : 'No changes. Infrastructure matches configuration.';
+              let full = fs.existsSync(`plan-${env}.txt`) ? fs.readFileSync(`plan-${env}.txt`, 'utf8') : '';
+              if (full.length > 50000) full = full.slice(0, 50000) + '\n... truncated — see workflow logs ...';
+              sections +=
+                `\n<details><summary><b>${env}</b> — ${add} to add, ${chg} to change, ${del} to destroy</summary>\n\n` +
+                '```text\n' + list + '\n```\n' +
+                '<details><summary>full plan</summary>\n\n```text\n' + full + '\n```\n</details>\n</details>\n';
             }
-            await github.rest.issues.createComment({
-              owner: context.repo.owner, repo: context.repo.repo,
-              issue_number: context.issue.number, body
+            const body = `${MARKER}\n## Terraform plan summary\n\n_Plan-only preview. The merge to \`main\` re-plans and applies (see infra-cd)._\n\n${table}\n${sections}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
             });
+            const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body,
+              });
+            }
