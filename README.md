@@ -187,12 +187,12 @@ human approval.
 
 | Workflow                   | Trigger                                 | Does                                                                                                         |
 | -------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `infra-ci`                 | PR touching `*.tf`/`*.tfvars`           | fmt, validate, tfsec, checkov (static quality gate — no Azure access)                                        |
-| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` | `plan` matrix for dev/test/prod; posts one combined risk dashboard comment + uploads `tfplan.json` artifacts |
-| `infra-cd`                 | merge to `main` (infra paths)           | `apply` per environment, gated by `DEPLOY_DEV/TEST/PROD` env toggles                                         |
+| `infra-ci`                 | PR touching `*.tf`/`*.tfvars` + manual  | fmt, validate, tfsec, checkov (static quality gate — no Azure access)                                        |
+| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` + manual (env picker; no PR comment on manual) | `plan` matrix for dev/test/prod; posts one combined risk dashboard comment + uploads `tfplan.json` artifacts |
+| `infra-cd`                 | merge to `main` (infra paths) + manual (env picker) | `apply` per environment, gated by `DEPLOY_DEV/TEST/PROD` env toggles                                         |
 | `infra-drift`              | nightly 6am AEST + manual               | `plan -detailed-exitcode` matrix; exit code 2 raises a GitHub Issue                                          |
-| `app-ci`                   | PR touching `app/`**                    | flake8, pytest, pip-audit, build validation                                                                  |
-| `app-cd`                   | merge to `main` (app paths) + weekly    | deploy dev→test→prod, prod via staging-slot swap with auto-rollback                                          |
+| `app-ci`                   | PR touching `app/**` + manual           | flake8, pytest, pip-audit, build validation                                                                  |
+| `app-cd`                   | merge to `main` (app paths) + weekly + manual (env picker) | deploy dev→test→prod, prod via staging-slot swap with auto-rollback                                          |
 
 
 Versioning: `APP_VERSION` (Git SHA), `SEMANTIC_VERSION` (latest tag), and

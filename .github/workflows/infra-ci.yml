@@ -6,6 +6,7 @@ on:
       - "**.tf"
       - "**.tfvars"
       - ".github/workflows/infra-ci.yml"
+  workflow_dispatch:
 
 # Static quality gate only (fmt / validate / tfsec / checkov). The plan preview
 # now lives in terraform-plan-dashboard.yml so there is a single source of plan

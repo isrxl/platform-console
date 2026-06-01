@@ -5,6 +5,7 @@ on:
     paths:
       - "app/**"
       - ".github/workflows/app-ci.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read

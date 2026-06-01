@@ -10,6 +10,14 @@ on:
       - ".github/scripts/parse-plan.sh"
       - ".github/scripts/write-dashboard-fragment.sh"
       - ".github/scripts/build-combined-comment.sh"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to plan (artifacts only; no PR comment on manual runs)"
+        required: false
+        type: choice
+        options: [all, dev, test, prod]
+        default: "all"
 
 permissions:
   contents: read
@@ -25,6 +33,10 @@ env:
 jobs:
   terraform-plan:
     name: Plan (${{ matrix.environment }})
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event.inputs.environment == 'all' ||
+      github.event.inputs.environment == matrix.environment
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -162,7 +174,7 @@ jobs:
   post-dashboard:
     name: Post plan dashboard
     needs: terraform-plan
-    if: always()
+    if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
