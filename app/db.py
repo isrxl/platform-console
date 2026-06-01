@@ -30,6 +30,11 @@ def _connection_string():
 _schema_initialized = False
 
 
+def _open_connection():
+    """Open a DB connection without triggering schema init."""
+    return pyodbc.connect(_connection_string(), timeout=15)
+
+
 def _ensure_schema():
     """Create tables and seed default flags on first use (idempotent)."""
     global _schema_initialized
@@ -41,7 +46,7 @@ def _ensure_schema():
 
 def get_connection():
     _ensure_schema()
-    return pyodbc.connect(_connection_string(), timeout=15)
+    return _open_connection()
 
 
 def healthcheck():
@@ -53,7 +58,7 @@ def healthcheck():
 
 def init_schema():
     """Idempotently create tables and seed default flags for this environment."""
-    with get_connection() as conn:
+    with _open_connection() as conn:
         cur = conn.cursor()
         cur.execute(SCHEMA_SQL)
         for flag_name, default in DEFAULT_FLAGS:
