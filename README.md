@@ -428,6 +428,29 @@ files — the architecture is otherwise identical.
 
 ---
 
+## Future enhancements
+
+Deferred work, captured so it isn't lost:
+
+- **Self-hosted, VNet-integrated CI runner.** `app-cd` currently reaches the
+  private App Service by briefly opening a runner-IP-only public-access window,
+  then re-locking. A self-hosted runner placed inside (or peered to) the VNet
+  would remove that window entirely and deploy straight over private endpoints.
+  **Not free:** GitHub charges nothing for self-hosted runners, but you pay for
+  the Azure compute that hosts them — e.g. a small always-on VM (~A$15–60/mo
+  depending on size) or a scale-to-zero option (Container Apps / ACI jobs) to
+  avoid idle cost. Trade-off: standing infrastructure + patching vs. the current
+  zero-cost, zero-standing-footprint IP window.
+- **Infracost in `infra-ci`.** Add a cost-diff step to the PR plan so reviewers
+  see the monthly $ delta of a change alongside the resource counts. Runs off the
+  same `tfplan.json` the dashboard already produces; Infracost CLI is free and
+  its cost data is public (a self-hosted/CLI setup needs no paid Cloud account).
+  Deliberately out of scope for the current dashboard (the handoff excluded it).
+- **Multi-region / DR**, **Front Door + WAF**, and **Entra-only SQL auth** — see
+  Known limitations above.
+
+---
+
 ## Local development
 
 ```bash
