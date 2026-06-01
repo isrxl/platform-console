@@ -7,6 +7,14 @@ on:
       - "**.tf"
       - "**.tfvars"
       - ".github/workflows/infra-cd.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to apply (respects DEPLOY_* toggles below)"
+        required: false
+        type: choice
+        options: [all, dev, test, prod]
+        default: "all"
 
 permissions:
   id-token: write # required to request the GitHub OIDC token
@@ -25,7 +33,7 @@ env:
 
 jobs:
   deploy-dev:
-    if: ${{ github.event_name == 'push' }}
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     outputs:
@@ -33,9 +41,17 @@ jobs:
     steps:
       - id: gate
         run: echo "ran=${DEPLOY_DEV}" >> "$GITHUB_OUTPUT"
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: >-
+          env.DEPLOY_DEV == 'true' &&
+          (github.event_name == 'push' ||
+           github.event.inputs.environment == 'all' ||
+           github.event.inputs.environment == 'dev')
         uses: actions/checkout@v4
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: >-
+          env.DEPLOY_DEV == 'true' &&
+          (github.event_name == 'push' ||
+           github.event.inputs.environment == 'all' ||
+           github.event.inputs.environment == 'dev')
         uses: ./.github/actions/tf-apply
         with:
           environment: dev
@@ -49,13 +65,21 @@ jobs:
 
   deploy-test:
     needs: deploy-dev
-    if: ${{ github.event_name == 'push' }}
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: test
     steps:
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: >-
+          env.DEPLOY_TEST == 'true' &&
+          (github.event_name == 'push' ||
+           github.event.inputs.environment == 'all' ||
+           github.event.inputs.environment == 'test')
         uses: actions/checkout@v4
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: >-
+          env.DEPLOY_TEST == 'true' &&
+          (github.event_name == 'push' ||
+           github.event.inputs.environment == 'all' ||
+           github.event.inputs.environment == 'test')
         uses: ./.github/actions/tf-apply
         with:
           environment: test
@@ -69,13 +93,21 @@ jobs:
 
   deploy-prod:
     needs: deploy-test
-    if: ${{ github.event_name == 'push' }}
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: prod
     steps:
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: >-
+          env.DEPLOY_PROD == 'true' &&
+          (github.event_name == 'push' ||
+           github.event.inputs.environment == 'all' ||
+           github.event.inputs.environment == 'prod')
         uses: actions/checkout@v4
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: >-
+          env.DEPLOY_PROD == 'true' &&
+          (github.event_name == 'push' ||
+           github.event.inputs.environment == 'all' ||
+           github.event.inputs.environment == 'prod')
         uses: ./.github/actions/tf-apply
         with:
           environment: prod

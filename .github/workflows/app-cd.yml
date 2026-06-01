@@ -20,6 +20,13 @@ on:
   schedule:
     - cron: "0 22 * * 0" # 8am AEST every Sunday
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy (respects DEPLOY_* toggles below)"
+        required: false
+        type: choice
+        options: [all, dev, test, prod]
+        default: "all"
 
 permissions:
   id-token: write # required to request the GitHub OIDC token
@@ -42,27 +49,28 @@ jobs:
       APP_NAME: app-cdvlplatcon-webapp-dev-aue
       RG: rg-cdvlplatcon-webapp-dev-aue
       ENV: dev
+      RUN_JOB: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.environment == 'all' || github.event.inputs.environment == 'dev' }}
     steps:
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         uses: actions/checkout@v4
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Package app
         run: |
           python -m pip install --upgrade pip
           cd app
           pip install -r requirements.txt --target ".python_packages/lib/site-packages" --upgrade
           zip -r ../app.zip . -x "tests/*" "*.pyc" "__pycache__/*"
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Detect runner egress IP
         id: ip
         run: echo "ip=$(curl -s https://api.ipify.org)" >> "$GITHUB_OUTPUT"
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Open temporary access window (runner IP only)
         id: window
         run: |
@@ -72,17 +80,17 @@ jobs:
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
             SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
           bash .github/scripts/wait-for-scm.sh "$APP_NAME"
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Deploy
         run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Inject version app settings
         run: |
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Smoke test /health
         run: |
           for i in $(seq 1 10); do
@@ -90,13 +98,13 @@ jobs:
             sleep 30
           done
           echo "Health check failed" && exit 1
-      - if: ${{ env.DEPLOY_DEV == 'true' }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Record deployment
         run: |
           curl -fsS -X POST "https://${APP_NAME}.azurewebsites.net/api/deployments" \
             -H "Content-Type: application/json" \
             -d "{\"environment\":\"$ENV\",\"version\":\"${{ github.sha }}\",\"deployed_by\":\"pipeline\"}"
-      - if: ${{ env.DEPLOY_DEV == 'true' && always() }}
+      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' && always() }}
         name: Close access window (restore private-only)
         run: bash .github/scripts/app-deploy-window.sh close "$RG" "$APP_NAME" "${{ steps.window.outputs.pna }}"
 
@@ -108,27 +116,28 @@ jobs:
       APP_NAME: app-cdvlplatcon-webapp-test-aue
       RG: rg-cdvlplatcon-webapp-test-aue
       ENV: test
+      RUN_JOB: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.environment == 'all' || github.event.inputs.environment == 'test' }}
     steps:
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         uses: actions/checkout@v4
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Package app
         run: |
           python -m pip install --upgrade pip
           cd app
           pip install -r requirements.txt --target ".python_packages/lib/site-packages" --upgrade
           zip -r ../app.zip . -x "tests/*" "*.pyc" "__pycache__/*"
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Detect runner egress IP
         id: ip
         run: echo "ip=$(curl -s https://api.ipify.org)" >> "$GITHUB_OUTPUT"
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Open temporary access window (runner IP only)
         id: window
         run: |
@@ -138,17 +147,17 @@ jobs:
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
             SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
           bash .github/scripts/wait-for-scm.sh "$APP_NAME"
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Deploy
         run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Inject version app settings
         run: |
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Smoke + integration test
         run: |
           for i in $(seq 1 10); do
@@ -157,13 +166,13 @@ jobs:
           done
           curl -fsS "https://${APP_NAME}.azurewebsites.net/api/health"
           curl -fsS "https://${APP_NAME}.azurewebsites.net/api/flags"
-      - if: ${{ env.DEPLOY_TEST == 'true' }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Record deployment
         run: |
           curl -fsS -X POST "https://${APP_NAME}.azurewebsites.net/api/deployments" \
             -H "Content-Type: application/json" \
             -d "{\"environment\":\"$ENV\",\"version\":\"${{ github.sha }}\",\"deployed_by\":\"pipeline\"}"
-      - if: ${{ env.DEPLOY_TEST == 'true' && always() }}
+      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' && always() }}
         name: Close access window (restore private-only)
         run: bash .github/scripts/app-deploy-window.sh close "$RG" "$APP_NAME" "${{ steps.window.outputs.pna }}"
 
@@ -176,27 +185,28 @@ jobs:
       RG: rg-cdvlplatcon-webapp-prod-aue
       SLOT: staging
       ENV: prod
+      RUN_JOB: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.environment == 'all' || github.event.inputs.environment == 'prod' }}
     steps:
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         uses: actions/checkout@v4
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Package app
         run: |
           python -m pip install --upgrade pip
           cd app
           pip install -r requirements.txt --target ".python_packages/lib/site-packages" --upgrade
           zip -r ../app.zip . -x "tests/*" "*.pyc" "__pycache__/*"
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Detect runner egress IP
         id: ip
         run: echo "ip=$(curl -s https://api.ipify.org)" >> "$GITHUB_OUTPUT"
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Open temporary access window (runner IP only)
         id: window
         run: |
@@ -208,17 +218,17 @@ jobs:
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --slot "$SLOT" --settings \
             SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
           bash .github/scripts/wait-for-scm.sh "$APP_NAME" "$SLOT"
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Deploy to staging slot
         run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip "$SLOT"
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Inject version app settings (staging slot)
         run: |
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --slot "$SLOT" --settings \
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Smoke test staging slot
         run: |
           for i in $(seq 1 10); do
@@ -226,10 +236,10 @@ jobs:
             sleep 30
           done
           echo "Staging smoke test failed — aborting before swap" && exit 1
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Swap staging into production
         run: az webapp deployment slot swap -g "$RG" -n "$APP_NAME" --slot "$SLOT" --target-slot production
-      - if: ${{ env.DEPLOY_PROD == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Post-swap health check (5 min, 10 x 30s)
         id: postswap
         run: |
@@ -241,16 +251,16 @@ jobs:
           done
           echo "failed=true" >> "$GITHUB_OUTPUT"
           exit 1
-      - if: ${{ env.DEPLOY_PROD == 'true' && failure() && steps.postswap.outputs.failed == 'true' }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' && failure() && steps.postswap.outputs.failed == 'true' }}
         name: Rollback on post-swap failure
         run: az webapp deployment slot swap -g "$RG" -n "$APP_NAME" --slot "$SLOT" --target-slot production
-      - if: ${{ env.DEPLOY_PROD == 'true' && success() }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' && success() }}
         name: Record deployment
         run: |
           curl -fsS -X POST "https://${APP_NAME}.azurewebsites.net/api/deployments" \
             -H "Content-Type: application/json" \
             -d "{\"environment\":\"$ENV\",\"version\":\"${{ github.sha }}\",\"deployed_by\":\"pipeline\"}"
-      - if: ${{ env.DEPLOY_PROD == 'true' && always() }}
+      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' && always() }}
         name: Close access window (restore private-only)
         run: |
           bash .github/scripts/app-deploy-window.sh close "$RG" "$APP_NAME" \

@@ -142,6 +142,7 @@ trade-off for this single-region, cost-constrained lab, not an oversight:
 | SQL auth (not Entra-only)                      | `CKV2_AZURE_27`                   | Documented design choice; credential lives only in Key Vault |
 | SQL auditing / VA                              | `CKV_AZURE_23/24`, `CKV2_AZURE_2` | Require extra storage; out of lab scope                      |
 | Ephemeral jump VM                              | `CKV_AZURE_50/151`                | Created only for validation, then destroyed                  |
+| Key Vault public access (deny-by-default ACL)  | `CKV_AZURE_189`                   | Public endpoint kept for ephemeral CI firewall rules; app uses private endpoint |
 | Not applicable to a private, code-deployed app | `CKV_AZURE_13/17/88/224`          | Easy Auth / client certs / Azure Files / Ledger unused       |
 
 
@@ -187,12 +188,12 @@ human approval.
 
 | Workflow                   | Trigger                                 | Does                                                                                                         |
 | -------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `infra-ci`                 | PR touching `*.tf`/`*.tfvars`           | fmt, validate, tfsec, checkov (static quality gate — no Azure access)                                        |
-| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` | `plan` matrix for dev/test/prod; posts one combined risk dashboard comment + uploads `tfplan.json` artifacts |
-| `infra-cd`                 | merge to `main` (infra paths)           | `apply` per environment, gated by `DEPLOY_DEV/TEST/PROD` env toggles                                         |
+| `infra-ci`                 | PR touching `*.tf`/`*.tfvars` + manual  | fmt, validate, tfsec, checkov (static quality gate — no Azure access)                                        |
+| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` + manual (env picker; no PR comment on manual) | `plan` matrix for dev/test/prod; posts one combined risk dashboard comment + uploads `tfplan.json` artifacts |
+| `infra-cd`                 | merge to `main` (infra paths) + manual (env picker) | `apply` per environment, gated by `DEPLOY_DEV/TEST/PROD` env toggles                                         |
 | `infra-drift`              | nightly 6am AEST + manual               | `plan -detailed-exitcode` matrix; exit code 2 raises a GitHub Issue                                          |
-| `app-ci`                   | PR touching `app/`**                    | flake8, pytest, pip-audit, build validation                                                                  |
-| `app-cd`                   | merge to `main` (app paths) + weekly    | deploy dev→test→prod, prod via staging-slot swap with auto-rollback                                          |
+| `app-ci`                   | PR touching `app/**` + manual           | flake8, pytest, pip-audit, build validation                                                                  |
+| `app-cd`                   | merge to `main` (app paths) + weekly + manual (env picker) | deploy dev→test→prod, prod via staging-slot swap with auto-rollback                                          |
 
 
 Versioning: `APP_VERSION` (Git SHA), `SEMANTIC_VERSION` (latest tag), and
