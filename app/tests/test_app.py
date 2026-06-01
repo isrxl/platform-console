@@ -1,5 +1,6 @@
 import datetime
 
+import pyodbc
 import pytest
 
 import app as app_module
@@ -78,6 +79,34 @@ def test_add_deployment_ok(client, monkeypatch):
         json={"environment": "prod", "version": "abc123", "semantic_version": "v1.0.0"},
     )
     assert resp.status_code == 201
+
+
+def test_get_connection_schema_init_no_recursion(monkeypatch):
+    """Regression: init_schema must not call get_connection (infinite recursion)."""
+    db._schema_initialized = False
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return self
+
+        def execute(self, *args, **kwargs):
+            return self
+
+        def fetchone(self):
+            return (1,)
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(db, "_connection_string", lambda: "fake-cs")
+    monkeypatch.setattr(pyodbc, "connect", lambda *args, **kwargs: FakeConn())
+    db.get_connection()
 
 
 def test_secret_expiry_status_bands(client, monkeypatch):
