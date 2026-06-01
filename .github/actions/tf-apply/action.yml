@@ -57,6 +57,22 @@ runs:
           -backend-config="container_name=${{ inputs.tf_state_container }}" \
           -backend-config="key=${{ inputs.environment }}/terraform.tfstate"
 
+    # Existing vaults deny the runner by default. Refresh reads secrets over the
+    # public endpoint during plan/apply — allow this run's IP first, remove after.
+    - name: Allow runner through Key Vault firewall
+      id: kv_access
+      shell: bash
+      run: |
+        KV="kv-cdvlplatcon-${{ inputs.environment }}-aue"
+        RG="rg-cdvlplatcon-webapp-${{ inputs.environment }}-aue"
+        if az keyvault show -g "$RG" -n "$KV" >/dev/null 2>&1; then
+          az keyvault network-rule add -g "$RG" --name "$KV" \
+            --ip-address "${{ steps.ip.outputs.ip }}" -o none
+          echo "opened=true" >> "$GITHUB_OUTPUT"
+          echo "kv=$KV" >> "$GITHUB_OUTPUT"
+          echo "rg=$RG" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Terraform plan
       shell: bash
       env:
@@ -78,3 +94,12 @@ runs:
         ARM_TENANT_ID: ${{ inputs.tenant_id }}
         ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
       run: terraform apply -input=false -auto-approve tfplan
+
+    - name: Close Key Vault firewall rule (temporary)
+      if: always() && steps.kv_access.outputs.opened == 'true'
+      shell: bash
+      run: |
+        az keyvault network-rule remove \
+          -g "${{ steps.kv_access.outputs.rg }}" \
+          --name "${{ steps.kv_access.outputs.kv }}" \
+          --ip-address "${{ steps.ip.outputs.ip }}" -o none || true
