@@ -6,6 +6,7 @@ import pytest
 import app as app_module
 import db
 import keyvault
+from config import short_sha
 
 
 @pytest.fixture
@@ -21,6 +22,12 @@ def test_health_returns_version(client):
     assert body["status"] == "healthy"
     assert "version" in body
     assert "environment" in body
+
+
+def test_short_sha_truncates_git_hash():
+    full = "5372a0c8e3fe6026dacdc3406ac8bf48b118aa38"
+    assert short_sha(full) == "5372a0c"
+    assert short_sha("dev-local") == "dev-local"
 
 
 def test_api_health_all_green(client, monkeypatch):

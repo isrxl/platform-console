@@ -8,6 +8,16 @@ for CI build validation) and the Platform Health tab reports the gap.
 import os
 
 
+def short_sha(value: str, length: int = 7) -> str:
+    """Return a display-friendly short Git SHA (first 7 hex chars)."""
+    value = (value or "").strip()
+    if not value or len(value) <= length:
+        return value
+    if all(c in "0123456789abcdef" for c in value.lower()):
+        return value[:length]
+    return value
+
+
 class Config:
     KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL", "")
     ENVIRONMENT = os.environ.get("ENVIRONMENT", "local")
