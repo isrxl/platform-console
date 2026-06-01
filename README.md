@@ -88,7 +88,8 @@ Three private endpoints, each paired with a private DNS zone linked to the VNet:
 platform-console/
 ├── .github/
 │   ├── actions/tf-apply/          # Composite action: init + plan + apply
-│   └── workflows/                 # app-ci, app-cd, infra-ci, infra-cd, infra-drift
+│   ├── scripts/                   # parse-plan.sh + build-comment.sh (PR plan dashboard)
+│   └── workflows/                 # app-ci/cd, infra-ci/cd, infra-drift, terraform-plan-dashboard
 ├── modules/
 │   ├── networking/                # VNet, subnets, NSGs, private DNS zones
 │   ├── database/                  # SQL Server + DB + SQL private endpoint
@@ -177,7 +178,8 @@ human approval.
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `infra-ci` | PR touching `*.tf`/`*.tfvars` | fmt, validate, tfsec, checkov, `plan` for dev/test/prod, posts plan as PR comment |
+| `infra-ci` | PR touching `*.tf`/`*.tfvars` | fmt, validate, tfsec, checkov (static quality gate — no Azure access) |
+| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` | `plan` matrix for dev/test/prod; posts a per-env risk dashboard comment + uploads `tfplan.json` artifacts |
 | `infra-cd` | merge to `main` (infra paths) | `apply` per environment, gated by `DEPLOY_DEV/TEST/PROD` env toggles |
 | `infra-drift` | nightly 6am AEST + manual | `plan -detailed-exitcode` matrix; exit code 2 raises a GitHub Issue |
 | `app-ci` | PR touching `app/**` | flake8, pytest, pip-audit, build validation |
@@ -217,8 +219,8 @@ az storage container create --name tfstate --account-name <storage-account>
 # 1b. Application resource groups are pre-created out-of-band — Terraform
 #     references them via a data source (modules/networking), it does NOT
 #     create them. Create one per environment you intend to plan/apply.
-#     NOTE: infra-ci plans dev/test/prod on every PR, so ALL THREE must exist
-#     or the data-source read fails during plan.
+#     NOTE: the plan dashboard plans dev/test/prod on every PR, so ALL THREE
+#     must exist or the data-source read fails during plan.
 for ENV in dev test prod; do
   az group create --name "rg-cdvlplatcon-webapp-${ENV}-aue" --location australiaeast
 done

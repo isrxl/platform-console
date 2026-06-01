@@ -1,0 +1,157 @@
+name: terraform-plan-dashboard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".github/workflows/terraform-plan-dashboard.yml"
+      - ".github/scripts/parse-plan.sh"
+      - ".github/scripts/build-comment.sh"
+
+permissions:
+  contents: read
+  pull-requests: write # post/update PR comments
+  id-token: write # OIDC federation to Entra ID
+
+# NOTE: This repo authenticates to Azure via OIDC using Actions *variables*
+# (AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID), not secrets —
+# they are non-sensitive identifiers. The handoff referenced secrets.*; vars.*
+# is the equivalent here and keeps a single source of truth across workflows.
+env:
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  terraform-plan:
+    name: Plan (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # all environments must run even if one fails
+      matrix:
+        environment: [dev, test, prod]
+        include:
+          - environment: dev
+            state_key: dev/terraform.tfstate
+            tfvars_file: dev.tfvars
+          - environment: test
+            state_key: test/terraform.tfstate
+            tfvars_file: test.tfvars
+          - environment: prod
+            state_key: prod/terraform.tfstate
+            tfvars_file: prod.tfvars
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false # wrapper intercepts exit codes; breaks -detailed-exitcode
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.TF_STATE_SA }}" \
+            -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ matrix.state_key }}" \
+            -backend-config="use_azuread_auth=true" \
+            -reconfigure
+
+      - name: Terraform Plan
+        id: plan
+        shell: bash
+        run: |
+          # set +e so a non-zero detailed-exitcode (2 = changes) does not abort
+          # the step before we capture it; exit 0 keeps the job green so the
+          # dashboard always posts (failure state is driven by exit_code).
+          set +e
+          terraform plan \
+            -var-file="${{ matrix.tfvars_file }}" \
+            -out=tfplan \
+            -detailed-exitcode \
+            -no-color 2>&1 | tee plan-output.txt
+          code=${PIPESTATUS[0]}
+          echo "exit_code=${code}" >>"$GITHUB_OUTPUT"
+          if [ -f tfplan ]; then
+            terraform show -json tfplan >tfplan.json
+          fi
+          exit 0
+        continue-on-error: true
+
+      - name: Parse Plan
+        id: parse
+        run: bash .github/scripts/parse-plan.sh
+
+      - name: Build Comment Body
+        id: build
+        run: bash .github/scripts/build-comment.sh
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+          PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
+          ADDS: ${{ steps.parse.outputs.adds }}
+          CHANGES: ${{ steps.parse.outputs.changes }}
+          DESTROYS: ${{ steps.parse.outputs.destroys }}
+          REPLACES: ${{ steps.parse.outputs.replaces }}
+          NO_OPS: ${{ steps.parse.outputs.no_ops }}
+          RISK: ${{ steps.parse.outputs.risk }}
+          FLAG_IAM: ${{ steps.parse.outputs.flag_iam }}
+          FLAG_NETWORK: ${{ steps.parse.outputs.flag_network }}
+          FLAG_DATA: ${{ steps.parse.outputs.flag_data }}
+          FLAG_DESTROY: ${{ steps.parse.outputs.flag_destroy }}
+          FLAG_REPLACE: ${{ steps.parse.outputs.flag_replace }}
+          ADDS_LIST: ${{ steps.parse.outputs.adds_list }}
+          CHANGES_LIST: ${{ steps.parse.outputs.changes_list }}
+          DESTROYS_LIST: ${{ steps.parse.outputs.destroys_list }}
+          REPLACES_LIST: ${{ steps.parse.outputs.replaces_list }}
+
+      - name: Post Plan Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const env = '${{ matrix.environment }}'.toUpperCase();
+            const marker = `<!-- terraform-plan-dashboard-${env} -->`;
+            const body = require('fs').readFileSync('comment-body.md', 'utf8');
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Upload Plan Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tfplan-${{ matrix.environment }}-${{ github.sha }}
+          path: |
+            tfplan
+            tfplan.json
+            plan-output.txt
+          retention-days: 30
+          if-no-files-found: warn
