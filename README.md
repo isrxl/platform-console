@@ -5,9 +5,7 @@ private-networking reference architecture: **Managed Identity**, **private
 endpoints** for every backend service, a fully **private App Service**, and
 **GitOps** delivery via two independent GitHub Actions pipelines.
 
-> Dual purpose: a hands-on reference for the Inlogik Senior Cloud Engineer
-> technical submission, and a public Cloudville showcase of Azure private
-> networking + Managed Identity + GitOps.
+> Dual purpose: a hands-on reference for a Senior Cloud Engineer technical submission, and a public Cloudville showcase of Azure private networking + Managed Identity + GitOps.
 
 ---
 
@@ -17,13 +15,15 @@ Platform Console is a Flask app that engineering teams use to manage and monitor
 their platform. Each of its five sections deliberately exercises a different
 Azure pattern, so the running app is also a live proof of the architecture.
 
-| Section | What it does | Azure pattern proven |
-|---|---|---|
-| Platform Health | Live status of all dependencies (30s refresh) | Managed Identity → Key Vault, SQL over private endpoint |
-| Feature Flags | Toggle flags per environment, audited to SQL | SQL write over private endpoint |
-| Deployment History | Every deploy recorded by Git SHA + semver | Pipeline → app → SQL injection |
-| Secret Expiry Monitor | Colour-coded Key Vault secret expiry | Managed Identity → Key Vault list/properties API |
-| Release Notes | Publish release notes per version | SQL read/write over private endpoint |
+
+| Section               | What it does                                  | Azure pattern proven                                    |
+| --------------------- | --------------------------------------------- | ------------------------------------------------------- |
+| Platform Health       | Live status of all dependencies (30s refresh) | Managed Identity → Key Vault, SQL over private endpoint |
+| Feature Flags         | Toggle flags per environment, audited to SQL  | SQL write over private endpoint                         |
+| Deployment History    | Every deploy recorded by Git SHA + semver     | Pipeline → app → SQL injection                          |
+| Secret Expiry Monitor | Colour-coded Key Vault secret expiry          | Managed Identity → Key Vault list/properties API        |
+| Release Notes         | Publish release notes per version             | SQL read/write over private endpoint                    |
+
 
 ---
 
@@ -50,35 +50,39 @@ Azure pattern, so the running app is also a live proof of the architecture.
 ```
 
 - **App Service public endpoint is disabled.** Ingress is via a private endpoint
-  in `snet-inbound`; outbound is via regional VNet integration in `snet-app`.
+in `snet-inbound`; outbound is via regional VNet integration in `snet-app`.
 - **Key Vault and SQL are private-endpoint only**, resolved through three private
-  DNS zones linked to the VNet.
+DNS zones linked to the VNet.
 - **No credentials in code.** The app authenticates to Key Vault with a
-  user-assigned Managed Identity (`Key Vault Secrets User`) and reads the SQL
-  connection string from a secret.
+user-assigned Managed Identity (`Key Vault Secrets User`) and reads the SQL
+connection string from a secret.
 
 ### Azure services used
 
-| Service | Purpose | Why chosen |
-|---|---|---|
-| App Service Premium v4 (P0v4) | Hosts the Flask app | Private endpoint support, ~17% cheaper than P0v3, Linux (no Windows licensing) |
-| Azure SQL Database (Basic) | App data | Cheapest tier sufficient for the lab; private-endpoint only |
-| Key Vault (RBAC) | Secret storage | Managed Identity access, no secrets in code |
-| Private Endpoints ×3 | App / KV / SQL ingress | Keeps all backend traffic off the public internet |
-| Private DNS Zones ×3 | Name resolution | Maps service hostnames to private IPs inside the VNet |
-| User-assigned Managed Identity | App → Key Vault auth | Lets Terraform grant RBAC before the app exists |
-| Log Analytics + App Insights | Telemetry & logs | Centralised observability; metric alerts via Azure Monitor |
-| Jump VM + Bastion (Developer) | Prod validation | Browse the private app from inside the VNet, then destroy |
+
+| Service                        | Purpose                | Why chosen                                                                     |
+| ------------------------------ | ---------------------- | ------------------------------------------------------------------------------ |
+| App Service Premium v4 (P0v4)  | Hosts the Flask app    | Private endpoint support, ~17% cheaper than P0v3, Linux (no Windows licensing) |
+| Azure SQL Database (Basic)     | App data               | Cheapest tier sufficient for the lab; private-endpoint only                    |
+| Key Vault (RBAC)               | Secret storage         | Managed Identity access, no secrets in code                                    |
+| Private Endpoints ×3           | App / KV / SQL ingress | Keeps all backend traffic off the public internet                              |
+| Private DNS Zones ×3           | Name resolution        | Maps service hostnames to private IPs inside the VNet                          |
+| User-assigned Managed Identity | App → Key Vault auth   | Lets Terraform grant RBAC before the app exists                                |
+| Log Analytics + App Insights   | Telemetry & logs       | Centralised observability; metric alerts via Azure Monitor                     |
+| Jump VM + Bastion (Developer)  | Prod validation        | Browse the private app from inside the VNet, then destroy                      |
+
 
 ### Private access patterns
 
 Three private endpoints, each paired with a private DNS zone linked to the VNet:
 
-| Private DNS zone | Resolves |
-|---|---|
-| `privatelink.azurewebsites.net` | App Service hostname → private IP in `snet-inbound` |
-| `privatelink.vaultcore.azure.net` | Key Vault hostname → private IP in `snet-pe` |
-| `privatelink.database.windows.net` | SQL Server hostname → private IP in `snet-pe` |
+
+| Private DNS zone                   | Resolves                                            |
+| ---------------------------------- | --------------------------------------------------- |
+| `privatelink.azurewebsites.net`    | App Service hostname → private IP in `snet-inbound` |
+| `privatelink.vaultcore.azure.net`  | Key Vault hostname → private IP in `snet-pe`        |
+| `privatelink.database.windows.net` | SQL Server hostname → private IP in `snet-pe`       |
+
 
 ---
 
@@ -88,7 +92,7 @@ Three private endpoints, each paired with a private DNS zone linked to the VNet:
 platform-console/
 ├── .github/
 │   ├── actions/tf-apply/          # Composite action: init + plan + apply
-│   ├── scripts/                   # parse-plan.sh + build-comment.sh (PR plan dashboard)
+│   ├── scripts/                   # parse-plan.sh + build-combined-comment.sh (PR plan dashboard)
 │   └── workflows/                 # app-ci/cd, infra-ci/cd, infra-drift, terraform-plan-dashboard
 ├── modules/
 │   ├── networking/                # VNet, subnets, NSGs, private DNS zones
@@ -112,7 +116,7 @@ platform-console/
 - **Single root** `main.tf` calls all five modules — no per-environment directories.
 - **Environment differences live only in `.tfvars`** (CIDRs + `deploy_jump_vm`).
 - **State is isolated per environment** via a backend `key` injected by the
-  pipeline at init time (`dev/`, `test/`, `prod/`).
+pipeline at init time (`dev/`, `test/`, `prod/`).
 - **Modules are environment-agnostic** — no environment branching inside them.
 
 ### A note on the dedicated `database` module
@@ -130,14 +134,16 @@ linear: `networking → database → security → compute`.
 checks is skipped (see `skip_check` in `infra-ci.yml`) — each is a conscious
 trade-off for this single-region, cost-constrained lab, not an oversight:
 
-| Category | Checks | Rationale |
-|---|---|---|
-| HA / zone redundancy / failover | `CKV_AZURE_212/225/229` | Single-region lab; multi-AZ adds cost |
-| Teardown-friendly Key Vault | `CKV_AZURE_42/110` | Purge protection blocks clean lab teardown |
-| SQL auth (not Entra-only) | `CKV2_AZURE_27` | Documented design choice; credential lives only in Key Vault |
-| SQL auditing / VA | `CKV_AZURE_23/24`, `CKV2_AZURE_2` | Require extra storage; out of lab scope |
-| Ephemeral jump VM | `CKV_AZURE_50/151` | Created only for validation, then destroyed |
-| Not applicable to a private, code-deployed app | `CKV_AZURE_13/17/88/224` | Easy Auth / client certs / Azure Files / Ledger unused |
+
+| Category                                       | Checks                            | Rationale                                                    |
+| ---------------------------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| HA / zone redundancy / failover                | `CKV_AZURE_212/225/229`           | Single-region lab; multi-AZ adds cost                        |
+| Teardown-friendly Key Vault                    | `CKV_AZURE_42/110`                | Purge protection blocks clean lab teardown                   |
+| SQL auth (not Entra-only)                      | `CKV2_AZURE_27`                   | Documented design choice; credential lives only in Key Vault |
+| SQL auditing / VA                              | `CKV_AZURE_23/24`, `CKV2_AZURE_2` | Require extra storage; out of lab scope                      |
+| Ephemeral jump VM                              | `CKV_AZURE_50/151`                | Created only for validation, then destroyed                  |
+| Not applicable to a private, code-deployed app | `CKV_AZURE_13/17/88/224`          | Easy Auth / client certs / Azure Files / Ledger unused       |
+
 
 Findings that were cheap and correct to fix (Key Vault secret **expiry** and
 **content-type**) are addressed in code rather than skipped.
@@ -151,22 +157,24 @@ leaving it empty falls back to `{type}-webapp-{env}-{loc}`. Two exceptions are
 driven by Azure name-length limits:
 
 - **Key Vault** (max 24 chars) drops the `webapp` token → `kv-{project}-{env}-{loc}`
-  (e.g. `kv-cdvlplatcon-prod-aue`, 23 chars).
+(e.g. `kv-cdvlplatcon-prod-aue`, 23 chars).
 - **Jump VM** sets an explicit 15-char-safe `computer_name` (`jump-{env}`)
-  separate from its longer Azure resource name (Windows hostname limit).
+separate from its longer Azure resource name (Windows hostname limit).
 
 Sub-resources that never carried `webapp` (subnets, NSGs, private endpoints, DNS
 links) use `{type}-{project}-{env}-{loc}`.
 
 ### Reconciled design decisions
 
-| Topic | Handoff text | Implemented as | Why |
-|---|---|---|---|
-| App identity | "system-assigned" (§2.3) | **User-assigned** `id-{project}-webapp-*` | Matches the naming table and lets Terraform grant KV RBAC before the app exists |
-| Key Vault network | "public access disabled" | Public access **on**, firewall **default-deny** + private endpoint + pipeline-IP allow | GitOps secret-seeding needs data-plane reach; the app still uses the private endpoint |
-| SQL ownership | networking/security | **dedicated `database` module** | Per request; cleaner boundaries |
-| Resource naming | `{type}-webapp-{env}-aue` | `{type}-{project}-webapp-{env}-aue` | Adds an org/project token; KV + jump VM special-cased for length limits |
-| Resource group | Terraform-created | **Pre-created, referenced via `data` source** | RGs are provisioned out-of-band; the pipeline SP holds RBAC-admin scoped per-RG. All planned environments' RGs must exist before `infra-ci` runs |
+
+| Topic             | Handoff text              | Implemented as                                                                         | Why                                                                                                                                              |
+| ----------------- | ------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| App identity      | "system-assigned" (§2.3)  | **User-assigned** `id-{project}-webapp-*`                                              | Matches the naming table and lets Terraform grant KV RBAC before the app exists                                                                  |
+| Key Vault network | "public access disabled"  | Public access **on**, firewall **default-deny** + private endpoint + pipeline-IP allow | GitOps secret-seeding needs data-plane reach; the app still uses the private endpoint                                                            |
+| SQL ownership     | networking/security       | **dedicated `database` module**                                                        | Per request; cleaner boundaries                                                                                                                  |
+| Resource naming   | `{type}-webapp-{env}-aue` | `{type}-{project}-webapp-{env}-aue`                                                    | Adds an org/project token; KV + jump VM special-cased for length limits                                                                          |
+| Resource group    | Terraform-created         | **Pre-created, referenced via `data` source**                                          | RGs are provisioned out-of-band; the pipeline SP holds RBAC-admin scoped per-RG. All planned environments' RGs must exist before `infra-ci` runs |
+
 
 ---
 
@@ -176,18 +184,25 @@ Two independent pipelines. **The pipeline is the only path to production** — n
 operator runs Terraform directly, and promotion is gated by automated tests, not
 human approval.
 
-| Workflow | Trigger | Does |
-|---|---|---|
-| `infra-ci` | PR touching `*.tf`/`*.tfvars` | fmt, validate, tfsec, checkov (static quality gate — no Azure access) |
-| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` | `plan` matrix for dev/test/prod; posts a per-env risk dashboard comment + uploads `tfplan.json` artifacts |
-| `infra-cd` | merge to `main` (infra paths) | `apply` per environment, gated by `DEPLOY_DEV/TEST/PROD` env toggles |
-| `infra-drift` | nightly 6am AEST + manual | `plan -detailed-exitcode` matrix; exit code 2 raises a GitHub Issue |
-| `app-ci` | PR touching `app/**` | flake8, pytest, pip-audit, build validation |
-| `app-cd` | merge to `main` (app paths) + weekly | deploy dev→test→prod, prod via staging-slot swap with auto-rollback |
+
+| Workflow                   | Trigger                                 | Does                                                                                                         |
+| -------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `infra-ci`                 | PR touching `*.tf`/`*.tfvars`           | fmt, validate, tfsec, checkov (static quality gate — no Azure access)                                        |
+| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` | `plan` matrix for dev/test/prod; posts one combined risk dashboard comment + uploads `tfplan.json` artifacts |
+| `infra-cd`                 | merge to `main` (infra paths)           | `apply` per environment, gated by `DEPLOY_DEV/TEST/PROD` env toggles                                         |
+| `infra-drift`              | nightly 6am AEST + manual               | `plan -detailed-exitcode` matrix; exit code 2 raises a GitHub Issue                                          |
+| `app-ci`                   | PR touching `app/`**                    | flake8, pytest, pip-audit, build validation                                                                  |
+| `app-cd`                   | merge to `main` (app paths) + weekly    | deploy dev→test→prod, prod via staging-slot swap with auto-rollback                                          |
+
 
 Versioning: `APP_VERSION` (Git SHA), `SEMANTIC_VERSION` (latest tag), and
 `DEPLOYED_AT` are injected as app settings at deploy time; the pipeline records
 each deploy via `POST /api/deployments`.
+
+The plan dashboard passes `-var="deployer_ip=<runner IP>"` (same as `infra-cd`).
+For environments where Key Vault already exists, it also **temporarily** adds the
+runner IP to the vault firewall for the duration of the plan, then removes it —
+otherwise Terraform cannot refresh `azurerm_key_vault_secret` during plan.
 
 ---
 
@@ -309,14 +324,16 @@ gh secret set TF_STATE_SA --body "cdvlplatcone46dcefeb780"
 gh secret set TF_STATE_CONTAINER --body "tfstate"
 ```
 
-| Name | Kind | Value |
-|---|---|---|
-| `AZURE_CLIENT_ID` | variable | SP application (client) ID |
-| `AZURE_TENANT_ID` | variable | Azure AD tenant ID |
-| `AZURE_SUBSCRIPTION_ID` | variable | Azure subscription ID |
-| `TF_STATE_RG` | secret | `rg-tfstate` |
-| `TF_STATE_SA` | secret | `cdvlplatcone46dcefeb780` |
-| `TF_STATE_CONTAINER` | secret | `tfstate` |
+
+| Name                    | Kind     | Value                      |
+| ----------------------- | -------- | -------------------------- |
+| `AZURE_CLIENT_ID`       | variable | SP application (client) ID |
+| `AZURE_TENANT_ID`       | variable | Azure AD tenant ID         |
+| `AZURE_SUBSCRIPTION_ID` | variable | Azure subscription ID      |
+| `TF_STATE_RG`           | secret   | `rg-tfstate`               |
+| `TF_STATE_SA`           | secret   | `cdvlplatcone46dcefeb780`  |
+| `TF_STATE_CONTAINER`    | secret   | `tfstate`                  |
+
 
 > **How it works:** workflows declare `permissions: id-token: write`, then
 > `azure/login@v2` exchanges the GitHub OIDC token for an Azure token. Terraform
@@ -393,16 +410,18 @@ The bootstrap state storage account is separate and can remain (~$0.05/month).
 
 ## Cost estimate (prod, ~2 days)
 
-| Component | 2-day (AUD) |
-|---|---|
-| App Service P0v4 | ~$10.00 |
-| Azure SQL (Basic) | ~$0.54 |
-| Private endpoints ×3 | ~$3.09 |
-| Key Vault | ~$0.08 |
-| State storage | ~$0.08 |
-| Jump VM (B2s, ~2h) | ~$0.12 |
+
+| Component                                        | 2-day (AUD)       |
+| ------------------------------------------------ | ----------------- |
+| App Service P0v4                                 | ~$10.00           |
+| Azure SQL (Basic)                                | ~$0.54            |
+| Private endpoints ×3                             | ~$3.09            |
+| Key Vault                                        | ~$0.08            |
+| State storage                                    | ~$0.08            |
+| Jump VM (B2s, ~2h)                               | ~$0.12            |
 | Log Analytics / App Insights / Bastion Developer | free at lab scale |
-| **Total** | **~$13.91 AUD** |
+| **Total**                                        | **~$13.91 AUD**   |
+
 
 ---
 
@@ -418,13 +437,36 @@ files — the architecture is otherwise identical.
 ## Known limitations
 
 - **Dynamic outbound IP on P0v4** — not relevant here; all backend traffic uses
-  private endpoints.
+private endpoints.
 - **Single region** — no multi-region/DR. Future enhancement.
 - **SQL auth (not Entra-only)** — connection string lives in Key Vault and is
-  fetched via Managed Identity, so no credential is in code.
+fetched via Managed Identity, so no credential is in code.
 - **No WAF** — the app's public endpoint is disabled (private only); Front Door /
-  App Gateway WAF is a future enhancement.
+App Gateway WAF is a future enhancement.
 - **Jump VM lifecycle** — must be manually destroyed after validation.
+
+---
+
+## Future enhancements
+
+Deferred work, captured so it isn't lost:
+
+- **Self-hosted, VNet-integrated CI runner.** `app-cd` currently reaches the
+private App Service by briefly opening a runner-IP-only public-access window,
+then re-locking. A self-hosted runner placed inside (or peered to) the VNet
+would remove that window entirely and deploy straight over private endpoints.
+**Not free:** GitHub charges nothing for self-hosted runners, but you pay for
+the Azure compute that hosts them — e.g. a small always-on VM (~A$15–60/mo
+depending on size) or a scale-to-zero option (Container Apps / ACI jobs) to
+avoid idle cost. Trade-off: standing infrastructure + patching vs. the current
+zero-cost, zero-standing-footprint IP window.
+- **Infracost in `infra-ci`.** Add a cost-diff step to the PR plan so reviewers
+see the monthly $ delta of a change alongside the resource counts. Runs off the
+same `tfplan.json` the dashboard already produces; Infracost CLI is free and
+its cost data is public (a self-hosted/CLI setup needs no paid Cloud account).
+Deliberately out of scope for the current dashboard (the handoff excluded it).
+- **Multi-region / DR**, **Front Door + WAF**, and **Entra-only SQL auth** — see
+Known limitations above.
 
 ---
 
@@ -439,3 +481,4 @@ export DB_CONNECTION_STRING="..."   # optional; otherwise read from Key Vault
 flake8 . && pytest tests/
 python app.py                       # http://localhost:8000
 ```
+

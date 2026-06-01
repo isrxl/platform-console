@@ -8,17 +8,14 @@ on:
       - "**.tfvars"
       - ".github/workflows/terraform-plan-dashboard.yml"
       - ".github/scripts/parse-plan.sh"
-      - ".github/scripts/build-comment.sh"
+      - ".github/scripts/write-dashboard-fragment.sh"
+      - ".github/scripts/build-combined-comment.sh"
 
 permissions:
   contents: read
-  pull-requests: write # post/update PR comments
+  pull-requests: write # post/update PR comment
   id-token: write # OIDC federation to Entra ID
 
-# NOTE: This repo authenticates to Azure via OIDC using Actions *variables*
-# (AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID), not secrets —
-# they are non-sensitive identifiers. The handoff referenced secrets.*; vars.*
-# is the equivalent here and keeps a single source of truth across workflows.
 env:
   ARM_USE_OIDC: "true"
   ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -30,7 +27,7 @@ jobs:
     name: Plan (${{ matrix.environment }})
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false # all environments must run even if one fails
+      fail-fast: false
       matrix:
         environment: [dev, test, prod]
         include:
@@ -56,7 +53,26 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: false # wrapper intercepts exit codes; breaks -detailed-exitcode
+          terraform_wrapper: false
+
+      - name: Detect runner egress IP
+        id: ip
+        run: echo "ip=$(curl -s https://api.ipify.org)" >> "$GITHUB_OUTPUT"
+
+      # Existing vaults deny the runner by default. Refresh reads secrets over the
+      # public endpoint during plan — allow this run's IP before plan, remove after.
+      - name: Allow runner through Key Vault firewall
+        id: kv_access
+        run: |
+          KV="kv-cdvlplatcon-${{ matrix.environment }}-aue"
+          RG="rg-cdvlplatcon-webapp-${{ matrix.environment }}-aue"
+          if az keyvault show -g "$RG" -n "$KV" >/dev/null 2>&1; then
+            az keyvault network-rule add -g "$RG" --name "$KV" \
+              --ip-address "${{ steps.ip.outputs.ip }}" -o none
+            echo "opened=true" >>"$GITHUB_OUTPUT"
+            echo "kv=$KV" >>"$GITHUB_OUTPUT"
+            echo "rg=$RG" >>"$GITHUB_OUTPUT"
+          fi
 
       - name: Terraform Init
         run: |
@@ -72,12 +88,11 @@ jobs:
         id: plan
         shell: bash
         run: |
-          # set +e so a non-zero detailed-exitcode (2 = changes) does not abort
-          # the step before we capture it; exit 0 keeps the job green so the
-          # dashboard always posts (failure state is driven by exit_code).
           set +e
           terraform plan \
+            -input=false \
             -var-file="${{ matrix.tfvars_file }}" \
+            -var="deployer_ip=${{ steps.ip.outputs.ip }}" \
             -out=tfplan \
             -detailed-exitcode \
             -no-color 2>&1 | tee plan-output.txt
@@ -89,13 +104,20 @@ jobs:
           exit 0
         continue-on-error: true
 
+      - name: Close Key Vault firewall rule (temporary)
+        if: always() && steps.kv_access.outputs.opened == 'true'
+        run: |
+          az keyvault network-rule remove \
+            -g "${{ steps.kv_access.outputs.rg }}" \
+            --name "${{ steps.kv_access.outputs.kv }}" \
+            --ip-address "${{ steps.ip.outputs.ip }}" -o none || true
+
       - name: Parse Plan
         id: parse
         run: bash .github/scripts/parse-plan.sh
 
-      - name: Build Comment Body
-        id: build
-        run: bash .github/scripts/build-comment.sh
+      - name: Write dashboard fragment
+        run: bash .github/scripts/write-dashboard-fragment.sh
         env:
           ENVIRONMENT: ${{ matrix.environment }}
           PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
@@ -104,6 +126,7 @@ jobs:
           DESTROYS: ${{ steps.parse.outputs.destroys }}
           REPLACES: ${{ steps.parse.outputs.replaces }}
           NO_OPS: ${{ steps.parse.outputs.no_ops }}
+          TOTAL: ${{ steps.parse.outputs.total }}
           RISK: ${{ steps.parse.outputs.risk }}
           FLAG_IAM: ${{ steps.parse.outputs.flag_iam }}
           FLAG_NETWORK: ${{ steps.parse.outputs.flag_network }}
@@ -115,18 +138,73 @@ jobs:
           DESTROYS_LIST: ${{ steps.parse.outputs.destroys_list }}
           REPLACES_LIST: ${{ steps.parse.outputs.replaces_list }}
 
-      - name: Post Plan Comment
+      - name: Upload dashboard fragment
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dashboard-fragment-${{ matrix.environment }}
+          path: dashboard-${{ matrix.environment }}.json
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload Plan Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tfplan-${{ matrix.environment }}-${{ github.sha }}
+          path: |
+            tfplan
+            tfplan.json
+            plan-output.txt
+          retention-days: 30
+          if-no-files-found: warn
+
+  post-dashboard:
+    name: Post plan dashboard
+    needs: terraform-plan
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dashboard-fragment-*
+          merge-multiple: true
+          path: dashboard-fragments
+
+      - name: Build combined comment
+        run: bash .github/scripts/build-combined-comment.sh dashboard-fragments
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Post or update PR comment
         uses: actions/github-script@v7
         with:
           script: |
-            const env = '${{ matrix.environment }}'.toUpperCase();
-            const marker = `<!-- terraform-plan-dashboard-${env} -->`;
+            const marker = '<!-- terraform-plan-dashboard -->';
+            const legacyMarkers = ['DEV', 'TEST', 'PROD'].map(
+              (e) => `<!-- terraform-plan-dashboard-${e} -->`,
+            );
             const body = require('fs').readFileSync('comment-body.md', 'utf8');
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
+            // Remove legacy per-env comments from the previous layout.
+            for (const c of comments) {
+              if (legacyMarkers.some((m) => c.body && c.body.includes(m))) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              }
+            }
             const existing = comments.find((c) => c.body && c.body.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({
@@ -143,15 +221,3 @@ jobs:
                 body,
               });
             }
-
-      - name: Upload Plan Artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: tfplan-${{ matrix.environment }}-${{ github.sha }}
-          path: |
-            tfplan
-            tfplan.json
-            plan-output.txt
-          retention-days: 30
-          if-no-files-found: warn
