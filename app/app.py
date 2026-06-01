@@ -12,7 +12,7 @@ from flask import Flask, jsonify, render_template, request
 
 import db
 import keyvault
-from config import Config
+from config import Config, short_sha
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("platform-console")
@@ -32,7 +32,7 @@ def index():
     return render_template(
         "index.html",
         environment=Config.ENVIRONMENT,
-        app_version=Config.APP_VERSION,
+        app_version=short_sha(Config.APP_VERSION),
         semantic_version=Config.SEMANTIC_VERSION,
         deployed_at=Config.DEPLOYED_AT,
     )
@@ -44,7 +44,7 @@ def health():
     return jsonify(
         {
             "status": "healthy",
-            "version": Config.APP_VERSION,
+            "version": short_sha(Config.APP_VERSION),
             "semantic_version": Config.SEMANTIC_VERSION,
             "environment": Config.ENVIRONMENT,
             "deployed_at": Config.DEPLOYED_AT,
@@ -78,7 +78,7 @@ def api_health():
 
     checks["app_version"] = {
         "status": "green",
-        "detail": f"{Config.APP_VERSION} @ {Config.DEPLOYED_AT or 'n/a'}",
+        "detail": f"{short_sha(Config.APP_VERSION)} @ {Config.DEPLOYED_AT or 'n/a'}",
     }
 
     overall = "green"

@@ -4,126 +4,237 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Platform Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = { theme: { extend: { colors: { ink: "#0b1020", panel: "#11172b" } } } };
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'monospace'],
+          },
+          colors: {
+            canvas: '#070b14',
+            surface: '#0f1629',
+            elevated: '#151d33',
+            line: '#1e293b',
+            accent: '#22d3ee',
+            accent2: '#6366f1',
+          },
+          boxShadow: {
+            glow: '0 0 40px -12px rgba(34, 211, 238, 0.35)',
+            card: '0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 32px rgba(0,0,0,0.35)',
+          },
+        },
+      },
+    };
   </script>
-</head>
-<body class="h-full bg-slate-950 text-slate-200 antialiased">
-  <div class="min-h-full">
-    <!-- Header -->
-    <header class="border-b border-slate-800 bg-ink/80 backdrop-blur">
-      <div class="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="h-9 w-9 rounded-lg bg-indigo-500/20 ring-1 ring-indigo-400/40 grid place-items-center">
-            <span class="text-indigo-300 font-bold">PC</span>
-          </div>
-          <div>
-            <h1 class="text-lg font-semibold text-white">Platform Console</h1>
-            <p class="text-xs text-slate-400">Azure internal platform management</p>
-          </div>
-        </div>
-        <div class="text-right text-xs leading-5">
-          <div><span class="text-slate-400">env</span>
-            <span class="ml-1 rounded bg-slate-800 px-2 py-0.5 font-mono text-indigo-300">{{ environment }}</span>
-          </div>
-          <div class="text-slate-400">
-            {{ app_version }}{% if semantic_version %} · {{ semantic_version }}{% endif %}
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <!-- Tabs -->
-    <nav class="mx-auto max-w-6xl px-6 pt-6">
-      <div class="flex flex-wrap gap-2" id="tabs">
-        <button data-tab="health" class="tab-btn">Platform Health</button>
-        <button data-tab="flags" class="tab-btn">Feature Flags</button>
-        <button data-tab="deployments" class="tab-btn">Deployment History</button>
-        <button data-tab="secrets" class="tab-btn">Secret Expiry</button>
-        <button data-tab="releases" class="tab-btn">Release Notes</button>
-      </div>
-    </nav>
-
-    <main class="mx-auto max-w-6xl px-6 py-6 space-y-4">
-      <section id="tab-health" class="tab-panel">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-base font-semibold text-white">Platform Health</h2>
-          <span class="text-xs text-slate-500">auto-refresh 30s</span>
-        </div>
-        <div id="health-grid" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"></div>
-      </section>
-
-      <section id="tab-flags" class="tab-panel hidden">
-        <h2 class="text-base font-semibold text-white mb-3">Feature Flags</h2>
-        <div id="flags-list" class="space-y-2"></div>
-      </section>
-
-      <section id="tab-deployments" class="tab-panel hidden">
-        <h2 class="text-base font-semibold text-white mb-3">Deployment History</h2>
-        <div class="overflow-x-auto rounded-lg ring-1 ring-slate-800">
-          <table class="min-w-full text-sm">
-            <thead class="bg-slate-900 text-slate-400">
-              <tr>
-                <th class="px-3 py-2 text-left">Env</th>
-                <th class="px-3 py-2 text-left">Version (SHA)</th>
-                <th class="px-3 py-2 text-left">Semantic</th>
-                <th class="px-3 py-2 text-left">Deployed At</th>
-                <th class="px-3 py-2 text-left">By</th>
-                <th class="px-3 py-2 text-left">Status</th>
-              </tr>
-            </thead>
-            <tbody id="deployments-body" class="divide-y divide-slate-800"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section id="tab-secrets" class="tab-panel hidden">
-        <h2 class="text-base font-semibold text-white mb-3">Secret Expiry Monitor</h2>
-        <div id="secrets-list" class="space-y-2"></div>
-      </section>
-
-      <section id="tab-releases" class="tab-panel hidden">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-base font-semibold text-white">Release Notes</h2>
-          <button id="new-release-btn" class="rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-400">New release</button>
-        </div>
-        <form id="release-form" class="hidden mb-4 space-y-2 rounded-lg bg-panel p-4 ring-1 ring-slate-800">
-          <div class="grid gap-2 sm:grid-cols-2">
-            <input id="r-version" placeholder="Version (Git SHA)" class="field" />
-            <input id="r-semver" placeholder="Semantic version (v1.2.0)" class="field" />
-          </div>
-          <input id="r-author" placeholder="Published by" class="field w-full" />
-          <textarea id="r-content" placeholder="Release summary" rows="3" class="field w-full"></textarea>
-          <div class="flex gap-2">
-            <button type="submit" class="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-400">Publish</button>
-            <button type="button" id="cancel-release" class="rounded-md bg-slate-700 px-3 py-1.5 text-sm">Cancel</button>
-          </div>
-        </form>
-        <div id="releases-list" class="space-y-3"></div>
-      </section>
-    </main>
-  </div>
-
   <style>
-    .tab-btn { @apply rounded-md px-3 py-1.5 text-sm font-medium text-slate-400 hover:text-white; }
-    .field { @apply rounded-md bg-slate-900 px-3 py-2 text-sm ring-1 ring-slate-700 focus:outline-none focus:ring-indigo-500; }
+    body {
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(34, 211, 238, 0.12), transparent),
+        radial-gradient(circle at 100% 0%, rgba(99, 102, 241, 0.08), transparent 40%),
+        #070b14;
+    }
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+    }
+    .nav-btn { @apply flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white; }
+    .nav-btn.active { @apply bg-white/10 text-white shadow-card ring-1 ring-white/10; }
+    .panel { @apply rounded-2xl border border-white/5 bg-surface/80 p-5 shadow-card backdrop-blur-sm; }
+    .field { @apply w-full rounded-xl border border-white/10 bg-canvas/60 px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/20; }
+    .chip { @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium; }
+    .fade-in { animation: fadeIn 0.35s ease-out both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   </style>
+</head>
+<body class="min-h-full font-sans text-slate-200 antialiased">
+  <div class="grid-bg pointer-events-none fixed inset-0 opacity-40"></div>
+
+  <div class="relative mx-auto flex min-h-screen max-w-[1400px] gap-0 lg:gap-6 lg:p-6">
+    <!-- Sidebar -->
+    <aside class="hidden w-64 shrink-0 flex-col rounded-2xl border border-white/5 bg-surface/90 p-4 shadow-card backdrop-blur-md lg:flex">
+      <div class="mb-8 flex items-center gap-3 px-2 pt-2">
+        <div class="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-accent/30 to-accent2/30 ring-1 ring-white/10">
+          <svg class="h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"/></svg>
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-white">Platform Console</div>
+          <div class="text-xs text-slate-500">Internal control plane</div>
+        </div>
+      </div>
+
+      <nav class="space-y-1" id="tabs">
+        <button data-tab="health" class="nav-btn active" data-label="Platform Health">
+          <span class="h-2 w-2 rounded-full bg-emerald-400"></span> Platform Health
+        </button>
+        <button data-tab="flags" class="nav-btn" data-label="Feature Flags">Feature Flags</button>
+        <button data-tab="deployments" class="nav-btn" data-label="Deployments">Deployment History</button>
+        <button data-tab="secrets" class="nav-btn" data-label="Secrets">Secret Expiry</button>
+        <button data-tab="releases" class="nav-btn" data-label="Release Notes">Release Notes</button>
+      </nav>
+
+      <div class="mt-auto space-y-3 border-t border-white/5 px-2 pt-4 text-xs">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-500">Environment</span>
+          <span class="chip border-accent/30 bg-accent/10 text-accent">{{ environment }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-500">Build</span>
+          <span class="font-mono text-slate-300">{{ app_version }}{% if semantic_version %} · {{ semantic_version }}{% endif %}</span>
+        </div>
+        {% if deployed_at %}
+        <div class="text-slate-600">Deployed {{ deployed_at }}</div>
+        {% endif %}
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="flex min-w-0 flex-1 flex-col">
+      <!-- Mobile header -->
+      <header class="border-b border-white/5 bg-surface/80 px-4 py-4 backdrop-blur-md lg:hidden">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-base font-semibold text-white">Platform Console</h1>
+            <p class="text-xs text-slate-500">{{ environment }} · <span class="font-mono">{{ app_version }}</span></p>
+          </div>
+        </div>
+        <div class="mt-3 flex gap-2 overflow-x-auto pb-1" id="tabs-mobile"></div>
+      </header>
+
+      <!-- Desktop top bar -->
+      <header class="mb-6 hidden items-center justify-between lg:flex">
+        <div>
+          <p class="text-xs font-medium uppercase tracking-widest text-accent/80">Cloudville Platform</p>
+          <h1 id="page-title" class="mt-1 text-2xl font-semibold tracking-tight text-white">Platform Health</h1>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="chip border-white/10 bg-white/5 text-slate-300">{{ environment }}</span>
+          <span class="chip border-white/10 bg-white/5 font-mono text-slate-300">{{ app_version }}</span>
+          {% if semantic_version %}<span class="chip border-accent2/30 bg-accent2/10 text-indigo-300">{{ semantic_version }}</span>{% endif %}
+        </div>
+      </header>
+
+      <main class="flex-1 px-4 pb-8 lg:px-0">
+        <section id="tab-health" class="tab-panel fade-in space-y-5">
+          <div id="health-overall" class="panel overflow-hidden"></div>
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-300">Service checks</h2>
+            <span class="text-xs text-slate-500">Refreshes every 30s</span>
+          </div>
+          <div id="health-grid" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
+        </section>
+
+        <section id="tab-flags" class="tab-panel hidden fade-in space-y-4">
+          <div class="panel">
+            <h2 class="text-lg font-semibold text-white">Feature Flags</h2>
+            <p class="mt-1 text-sm text-slate-500">Toggle capabilities per environment without redeploying.</p>
+          </div>
+          <div id="flags-list" class="space-y-3"></div>
+        </section>
+
+        <section id="tab-deployments" class="tab-panel hidden fade-in space-y-4">
+          <div class="panel">
+            <h2 class="text-lg font-semibold text-white">Deployment History</h2>
+            <p class="mt-1 text-sm text-slate-500">Pipeline releases recorded automatically after each deploy.</p>
+          </div>
+          <div class="panel overflow-hidden p-0">
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="border-b border-white/5 bg-elevated/80 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th class="px-4 py-3">Environment</th>
+                    <th class="px-4 py-3">Version</th>
+                    <th class="px-4 py-3">Semantic</th>
+                    <th class="px-4 py-3">Deployed</th>
+                    <th class="px-4 py-3">By</th>
+                    <th class="px-4 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="deployments-body" class="divide-y divide-white/5"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-secrets" class="tab-panel hidden fade-in space-y-4">
+          <div class="panel">
+            <h2 class="text-lg font-semibold text-white">Secret Expiry Monitor</h2>
+            <p class="mt-1 text-sm text-slate-500">Key Vault secrets surfaced via managed identity.</p>
+          </div>
+          <div id="secrets-list" class="space-y-3"></div>
+        </section>
+
+        <section id="tab-releases" class="tab-panel hidden fade-in space-y-4">
+          <div class="panel flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-white">Release Notes</h2>
+              <p class="mt-1 text-sm text-slate-500">Publish what shipped and why it matters.</p>
+            </div>
+            <button id="new-release-btn" class="rounded-xl bg-gradient-to-r from-accent to-accent2 px-4 py-2 text-sm font-semibold text-slate-950 shadow-glow transition hover:brightness-110">New release</button>
+          </div>
+          <form id="release-form" class="panel hidden space-y-3">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <input id="r-version" placeholder="Git SHA" class="field" />
+              <input id="r-semver" placeholder="Semantic version (v1.2.0)" class="field" />
+            </div>
+            <input id="r-author" placeholder="Published by" class="field" />
+            <textarea id="r-content" placeholder="Release summary" rows="3" class="field"></textarea>
+            <div class="flex gap-2">
+              <button type="submit" class="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Publish</button>
+              <button type="button" id="cancel-release" class="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:bg-white/5">Cancel</button>
+            </div>
+          </form>
+          <div id="releases-list" class="space-y-4"></div>
+        </section>
+      </main>
+    </div>
+  </div>
 
   <script>
     const $ = (s) => document.querySelector(s);
-    const dot = (c) => ({ green: "bg-emerald-400", red: "bg-rose-500", yellow: "bg-amber-400", amber: "bg-amber-400" }[c] || "bg-slate-500");
+    const $$ = (s) => document.querySelectorAll(s);
+    const shortSha = (v) => (v && v.length > 7 ? v.slice(0, 7) : (v || ""));
+
+    const statusStyles = {
+      green: { dot: "bg-emerald-400", ring: "ring-emerald-400/30", text: "text-emerald-300", bg: "bg-emerald-500/10" },
+      red: { dot: "bg-rose-500", ring: "ring-rose-500/30", text: "text-rose-300", bg: "bg-rose-500/10" },
+      yellow: { dot: "bg-amber-400", ring: "ring-amber-400/30", text: "text-amber-300", bg: "bg-amber-500/10" },
+      amber: { dot: "bg-amber-400", ring: "ring-amber-400/30", text: "text-amber-300", bg: "bg-amber-500/10" },
+    };
+    const st = (c) => statusStyles[c] || statusStyles.yellow;
 
     function setActiveTab(name) {
-      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
-      $("#tab-" + name).classList.remove("hidden");
-      document.querySelectorAll(".tab-btn").forEach((b) => {
-        const on = b.dataset.tab === name;
-        b.classList.toggle("bg-slate-800", on);
-        b.classList.toggle("text-white", on);
-      });
+      $$(".tab-panel").forEach((p) => p.classList.add("hidden"));
+      const panel = $("#tab-" + name);
+      panel.classList.remove("hidden");
+      panel.classList.remove("fade-in");
+      void panel.offsetWidth;
+      panel.classList.add("fade-in");
+
+      $$(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+      const title = document.querySelector(`.nav-btn[data-tab="${name}"]`)?.dataset.label || name;
+      const pageTitle = $("#page-title");
+      if (pageTitle) pageTitle.textContent = title;
       loaders[name] && loaders[name]();
     }
+
+    // Clone nav to mobile strip
+    $$("#tabs .nav-btn").forEach((btn) => {
+      const m = btn.cloneNode(true);
+      m.classList.remove("active", "nav-btn");
+      m.className = "shrink-0 rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400";
+      m.onclick = () => setActiveTab(btn.dataset.tab);
+      $("#tabs-mobile")?.appendChild(m);
+    });
+    $$("#tabs .nav-btn").forEach((b) => (b.onclick = () => setActiveTab(b.dataset.tab)));
 
     async function jget(url) { const r = await fetch(url); return r.json(); }
     async function jpost(url, body) {
@@ -134,77 +245,108 @@
     const loaders = {
       async health() {
         const data = await jget("/api/health");
-        $("#health-grid").innerHTML = Object.entries(data.checks).map(([k, v]) => `
-          <div class="rounded-lg bg-panel p-4 ring-1 ring-slate-800">
-            <div class="flex items-center gap-2">
-              <span class="h-2.5 w-2.5 rounded-full ${dot(v.status)}"></span>
-              <span class="font-medium capitalize text-white">${k.replace(/_/g, " ")}</span>
+        const o = st(data.overall);
+        const labels = { green: "All systems operational", yellow: "Degraded performance", red: "Incident detected" };
+        $("#health-overall").innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+              <div class="grid h-14 w-14 place-items-center rounded-2xl ${o.bg} ring-1 ${o.ring}">
+                <span class="h-4 w-4 rounded-full ${o.dot} shadow-[0_0_12px_currentColor]"></span>
+              </div>
+              <div>
+                <div class="text-xs font-medium uppercase tracking-widest ${o.text}">${data.overall}</div>
+                <div class="mt-1 text-xl font-semibold text-white">${labels[data.overall] || "Status unknown"}</div>
+              </div>
             </div>
-            <p class="mt-1 text-xs text-slate-400 break-words">${v.detail}</p>
-          </div>`).join("");
+            <div class="text-right text-xs text-slate-500">${Object.keys(data.checks).length} checks monitored</div>
+          </div>`;
+
+        $("#health-grid").innerHTML = Object.entries(data.checks).map(([k, v]) => {
+          const s = st(v.status);
+          return `
+          <div class="panel group transition hover:border-white/10 hover:shadow-glow">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="h-2.5 w-2.5 rounded-full ${s.dot}"></span>
+                  <span class="text-sm font-semibold capitalize text-white">${k.replace(/_/g, " ")}</span>
+                </div>
+                <p class="mt-2 text-xs leading-relaxed text-slate-400 break-words">${v.detail}</p>
+              </div>
+              <span class="chip border-white/10 ${s.bg} ${s.text}">${v.status}</span>
+            </div>
+          </div>`;
+        }).join("");
       },
       async flags() {
         const flags = await jget("/api/flags");
         $("#flags-list").innerHTML = flags.map((f) => `
-          <div class="flex items-center justify-between rounded-lg bg-panel p-3 ring-1 ring-slate-800">
+          <div class="panel flex items-center justify-between gap-4">
             <div>
-              <div class="font-medium text-white">${f.flag_name}</div>
-              <div class="text-xs text-slate-500">updated ${f.updated_at || "-"} by ${f.updated_by || "-"}</div>
+              <div class="font-semibold text-white">${f.flag_name}</div>
+              <div class="mt-1 text-xs text-slate-500">${f.updated_at || "never"} · ${f.updated_by || "system"}</div>
             </div>
-            <button onclick="toggleFlag(${f.id}, ${!f.is_enabled})"
-              class="h-6 w-11 rounded-full ${f.is_enabled ? "bg-emerald-500" : "bg-slate-600"} relative transition">
-              <span class="absolute top-0.5 ${f.is_enabled ? "right-0.5" : "left-0.5"} h-5 w-5 rounded-full bg-white"></span>
+            <button onclick="toggleFlag(${f.id}, ${!f.is_enabled})" aria-label="Toggle ${f.flag_name}"
+              class="relative h-7 w-12 rounded-full transition ${f.is_enabled ? "bg-emerald-500" : "bg-slate-600"}">
+              <span class="absolute top-0.5 ${f.is_enabled ? "right-0.5" : "left-0.5"} h-6 w-6 rounded-full bg-white shadow transition"></span>
             </button>
-          </div>`).join("") || emptyMsg("No flags found");
+          </div>`).join("") || emptyMsg("No feature flags configured for this environment");
       },
       async deployments() {
         const rows = await jget("/api/deployments");
         $("#deployments-body").innerHTML = rows.map((d) => `
-          <tr class="text-slate-300">
-            <td class="px-3 py-2 font-mono text-indigo-300">${d.environment}</td>
-            <td class="px-3 py-2 font-mono">${(d.version || "").slice(0, 12)}</td>
-            <td class="px-3 py-2">${d.semantic_version || "-"}</td>
-            <td class="px-3 py-2">${d.deployed_at || "-"}</td>
-            <td class="px-3 py-2">${d.deployed_by || "-"}</td>
-            <td class="px-3 py-2"><span class="rounded bg-slate-800 px-2 py-0.5 text-xs">${d.status}</span></td>
-          </tr>`).join("") || `<tr><td colspan="6" class="px-3 py-6 text-center text-slate-500">No deployments recorded</td></tr>`;
+          <tr class="text-slate-300 hover:bg-white/[0.02]">
+            <td class="px-4 py-3"><span class="chip border-accent/20 bg-accent/10 font-mono text-accent">${d.environment}</span></td>
+            <td class="px-4 py-3 font-mono text-slate-200">${shortSha(d.version)}</td>
+            <td class="px-4 py-3">${d.semantic_version || "—"}</td>
+            <td class="px-4 py-3 text-slate-400">${d.deployed_at || "—"}</td>
+            <td class="px-4 py-3">${d.deployed_by || "—"}</td>
+            <td class="px-4 py-3"><span class="chip border-emerald-500/20 bg-emerald-500/10 text-emerald-300">${d.status}</span></td>
+          </tr>`).join("") || `<tr><td colspan="6" class="px-4 py-10 text-center text-slate-500">No deployments recorded yet</td></tr>`;
       },
       async secrets() {
         const rows = await jget("/api/secrets/expiry");
-        $("#secrets-list").innerHTML = rows.map((s) => `
-          <div class="flex items-center justify-between rounded-lg bg-panel p-3 ring-1 ring-slate-800">
-            <div class="flex items-center gap-2">
-              <span class="h-2.5 w-2.5 rounded-full ${dot(s.status)}"></span>
-              <span class="font-mono text-white">${s.name}</span>
+        $("#secrets-list").innerHTML = rows.map((s) => {
+          const c = st(s.status);
+          return `
+          <div class="panel flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <span class="h-2.5 w-2.5 rounded-full ${c.dot}"></span>
+              <span class="font-mono text-sm text-white">${s.name}</span>
             </div>
-            <div class="text-xs text-slate-400">${s.expires_on ? (s.days_remaining + " days") : "no expiry set"}</div>
-          </div>`).join("") || emptyMsg("No secrets found");
+            <span class="text-xs ${c.text}">${s.expires_on ? s.days_remaining + " days remaining" : "No expiry set"}</span>
+          </div>`;
+        }).join("") || emptyMsg("No secrets found in Key Vault");
       },
       async releases() {
         const rows = await jget("/api/releases");
-        const tag = (t) => ({ feature: "bg-emerald-500/20 text-emerald-300", fix: "bg-sky-500/20 text-sky-300", note: "bg-slate-600/40 text-slate-300", breaking: "bg-rose-500/20 text-rose-300" }[t] || "bg-slate-600/40 text-slate-300");
+        const tag = (t) => ({ feature: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300", fix: "border-sky-500/20 bg-sky-500/10 text-sky-300", note: "border-white/10 bg-white/5 text-slate-300", breaking: "border-rose-500/20 bg-rose-500/10 text-rose-300" }[t] || "border-white/10 bg-white/5 text-slate-300");
         $("#releases-list").innerHTML = rows.map((r) => `
-          <div class="rounded-lg bg-panel p-4 ring-1 ring-slate-800">
-            <div class="flex items-center justify-between">
-              <div class="font-semibold text-white">${r.semantic_version} <span class="font-mono text-xs text-slate-500">${(r.version || "").slice(0, 12)}</span></div>
+          <article class="panel">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <span class="text-lg font-semibold text-white">${r.semantic_version || "Release"}</span>
+                <span class="ml-2 font-mono text-xs text-slate-500">${shortSha(r.version)}</span>
+              </div>
               <div class="text-xs text-slate-500">${r.published_at || ""} · ${r.published_by}</div>
             </div>
-            <p class="mt-1 text-sm text-slate-300">${r.content}</p>
-            <div class="mt-2 space-y-1">
-              ${(r.items || []).map((i) => `<div class="text-sm"><span class="mr-2 rounded px-1.5 py-0.5 text-xs ${tag(i.item_type)}">${i.item_type}</span>${i.description}</div>`).join("")}
+            <p class="mt-3 text-sm leading-relaxed text-slate-300">${r.content}</p>
+            <div class="mt-4 space-y-2 border-t border-white/5 pt-4">
+              ${(r.items || []).map((i) => `<div class="text-sm text-slate-300"><span class="chip mr-2 ${tag(i.item_type)}">${i.item_type}</span>${i.description}</div>`).join("")}
             </div>
-          </div>`).join("") || emptyMsg("No release notes yet");
+          </article>`).join("") || emptyMsg("No release notes published yet");
       },
     };
 
-    function emptyMsg(t) { return `<div class="rounded-lg bg-panel p-6 text-center text-slate-500 ring-1 ring-slate-800">${t}</div>`; }
+    function emptyMsg(t) {
+      return `<div class="panel py-12 text-center text-sm text-slate-500">${t}</div>`;
+    }
 
     async function toggleFlag(id, enabled) {
       await jpost("/api/flags/" + id, { is_enabled: enabled });
       loaders.flags();
     }
 
-    // Release form
     $("#new-release-btn").onclick = () => $("#release-form").classList.toggle("hidden");
     $("#cancel-release").onclick = () => $("#release-form").classList.add("hidden");
     $("#release-form").onsubmit = async (e) => {
@@ -221,7 +363,6 @@
       loaders.releases();
     };
 
-    document.querySelectorAll(".tab-btn").forEach((b) => (b.onclick = () => setActiveTab(b.dataset.tab)));
     setActiveTab("health");
     setInterval(() => { if (!$("#tab-health").classList.contains("hidden")) loaders.health(); }, 30000);
   </script>
