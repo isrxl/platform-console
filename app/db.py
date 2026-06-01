@@ -27,7 +27,20 @@ def _connection_string():
     return keyvault.get_secret(Config.DB_SECRET_NAME)
 
 
+_schema_initialized = False
+
+
+def _ensure_schema():
+    """Create tables and seed default flags on first use (idempotent)."""
+    global _schema_initialized
+    if _schema_initialized:
+        return
+    init_schema()
+    _schema_initialized = True
+
+
 def get_connection():
+    _ensure_schema()
     return pyodbc.connect(_connection_string(), timeout=15)
 
 

@@ -122,13 +122,17 @@ def api_add_deployment():
     missing = [k for k in required if not body.get(k)]
     if missing:
         return jsonify({"error": f"missing fields: {', '.join(missing)}"}), 400
-    db.add_deployment(
-        environment=body["environment"],
-        version=body["version"],
-        semantic_version=body.get("semantic_version"),
-        deployed_by=body.get("deployed_by", "pipeline"),
-        status=body.get("status", "success"),
-    )
+    try:
+        db.add_deployment(
+            environment=body["environment"],
+            version=body["version"],
+            semantic_version=body.get("semantic_version") or Config.SEMANTIC_VERSION or None,
+            deployed_by=body.get("deployed_by", "pipeline"),
+            status=body.get("status", "success"),
+        )
+    except Exception as exc:  # noqa: BLE001 - return detail to the pipeline caller
+        log.exception("Failed to record deployment")
+        return jsonify({"error": str(exc)}), 500
     return jsonify({"ok": True}), 201
 
 
