@@ -88,7 +88,7 @@ Three private endpoints, each paired with a private DNS zone linked to the VNet:
 platform-console/
 ├── .github/
 │   ├── actions/tf-apply/          # Composite action: init + plan + apply
-│   ├── scripts/                   # parse-plan.sh + build-comment.sh (PR plan dashboard)
+│   ├── scripts/                   # parse-plan.sh + build-combined-comment.sh (PR plan dashboard)
 │   └── workflows/                 # app-ci/cd, infra-ci/cd, infra-drift, terraform-plan-dashboard
 ├── modules/
 │   ├── networking/                # VNet, subnets, NSGs, private DNS zones
@@ -179,7 +179,7 @@ human approval.
 | Workflow | Trigger | Does |
 |---|---|---|
 | `infra-ci` | PR touching `*.tf`/`*.tfvars` | fmt, validate, tfsec, checkov (static quality gate — no Azure access) |
-| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` | `plan` matrix for dev/test/prod; posts a per-env risk dashboard comment + uploads `tfplan.json` artifacts |
+| `terraform-plan-dashboard` | PR to `main` touching `*.tf`/`*.tfvars` | `plan` matrix for dev/test/prod; posts one combined risk dashboard comment + uploads `tfplan.json` artifacts |
 | `infra-cd` | merge to `main` (infra paths) | `apply` per environment, gated by `DEPLOY_DEV/TEST/PROD` env toggles |
 | `infra-drift` | nightly 6am AEST + manual | `plan -detailed-exitcode` matrix; exit code 2 raises a GitHub Issue |
 | `app-ci` | PR touching `app/**` | flake8, pytest, pip-audit, build validation |
