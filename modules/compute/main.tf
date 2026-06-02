@@ -15,6 +15,7 @@ locals {
     APPLICATIONINSIGHTS_CONNECTION_STRING = var.app_insights_connection_string
     # Dependencies are installed into .python_packages in app-cd before zipping.
     SCM_DO_BUILD_DURING_DEPLOYMENT = "false"
+    PYTHONPATH                     = "/home/site/wwwroot/.python_packages/lib/site-packages"
     WEBSITES_PORT                  = "8000"
   }
 }
