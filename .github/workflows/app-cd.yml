@@ -40,6 +40,9 @@ env:
   DEPLOY_DEV: "false"
   DEPLOY_TEST: "false"
   DEPLOY_PROD: "true"
+  # Must stay in sync with modules/compute/main.tf (local.gunicorn_startup_command).
+  APP_STARTUP_CMD: python -m gunicorn --bind=0.0.0.0:8000 --timeout 120 app:app
+  APP_PYTHONPATH: /home/site/wwwroot/.python_packages/lib/site-packages
 
 jobs:
   deploy-dev:
@@ -77,9 +80,11 @@ jobs:
           PNA=$(az webapp show -g "$RG" -n "$APP_NAME" --query publicNetworkAccess -o tsv)
           echo "pna=${PNA:-Disabled}" >> "$GITHUB_OUTPUT"
           bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}"
+          az webapp config set -g "$RG" -n "$APP_NAME" \
+            --startup-file "$APP_STARTUP_CMD" -o none
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
             SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-            PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages" \
+            PYTHONPATH="$APP_PYTHONPATH" \
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -142,9 +147,11 @@ jobs:
           PNA=$(az webapp show -g "$RG" -n "$APP_NAME" --query publicNetworkAccess -o tsv)
           echo "pna=${PNA:-Disabled}" >> "$GITHUB_OUTPUT"
           bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}"
+          az webapp config set -g "$RG" -n "$APP_NAME" \
+            --startup-file "$APP_STARTUP_CMD" -o none
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
             SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-            PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages" \
+            PYTHONPATH="$APP_PYTHONPATH" \
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -211,9 +218,11 @@ jobs:
           echo "slot_pna=${SLOT_PNA:-Disabled}" >> "$GITHUB_OUTPUT"
           echo "prod_pna=${PROD_PNA:-Disabled}" >> "$GITHUB_OUTPUT"
           bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}" "$SLOT"
+          az webapp config set -g "$RG" -n "$APP_NAME" --slot "$SLOT" \
+            --startup-file "$APP_STARTUP_CMD" -o none
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --slot "$SLOT" --settings \
             SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-            PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages" \
+            PYTHONPATH="$APP_PYTHONPATH" \
             APP_VERSION="${{ github.sha }}" \
             SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
             DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
