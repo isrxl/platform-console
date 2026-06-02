@@ -43,6 +43,7 @@ jobs:
         run: pip-audit -r requirements.txt
 
       - name: Build validation — app-cd package layout
+        working-directory: ${{ github.workspace }}
         env:
           ENVIRONMENT: ci
         run: |
