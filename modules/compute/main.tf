@@ -5,7 +5,11 @@ locals {
   sub      = "${local.prj}${local.suffix}"
   app_name = "app-${local.base}"
 
-  # Static app settings owned by Terraform. Version-related settings
+  # CI ships deps in .python_packages; python -m gunicorn resolves the module via
+  # PYTHONPATH without relying on a venv shim on PATH (Oryx used to provide that).
+  gunicorn_startup_command = "python -m gunicorn --bind=0.0.0.0:8000 --timeout 120 app:app"
+
+  # Static app settings owned by Terraform.
   # (APP_VERSION / SEMANTIC_VERSION / DEPLOYED_AT) are injected by the pipeline
   # at deploy time and excluded here via ignore_changes below.
   base_app_settings = {
@@ -52,7 +56,7 @@ resource "azurerm_linux_web_app" "this" {
     vnet_route_all_enabled            = true
     health_check_path                 = "/health"
     health_check_eviction_time_in_min = 5
-    app_command_line                  = "gunicorn --bind=0.0.0.0:8000 --timeout 120 app:app"
+    app_command_line                  = local.gunicorn_startup_command
 
     application_stack {
       python_version = "3.11"
@@ -106,7 +110,7 @@ resource "azurerm_linux_web_app_slot" "staging" {
     vnet_route_all_enabled            = true
     health_check_path                 = "/health"
     health_check_eviction_time_in_min = 5
-    app_command_line                  = "gunicorn --bind=0.0.0.0:8000 --timeout 120 app:app"
+    app_command_line                  = local.gunicorn_startup_command
 
     application_stack {
       python_version = "3.11"
