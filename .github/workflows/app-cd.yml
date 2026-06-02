@@ -78,18 +78,16 @@ jobs:
           echo "pna=${PNA:-Disabled}" >> "$GITHUB_OUTPUT"
           bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}"
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
-            SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages" \
+            APP_VERSION="${{ github.sha }}" \
+            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
+            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o none
           bash .github/scripts/wait-for-scm.sh "$APP_NAME"
       - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Deploy
         run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip
-      - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
-        name: Inject version app settings
-        run: |
-          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
-            APP_VERSION="${{ github.sha }}" \
-            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
-            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
       - if: ${{ env.DEPLOY_DEV == 'true' && env.RUN_JOB == 'true' }}
         name: Smoke test /health
         run: |
@@ -145,18 +143,16 @@ jobs:
           echo "pna=${PNA:-Disabled}" >> "$GITHUB_OUTPUT"
           bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}"
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
-            SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages" \
+            APP_VERSION="${{ github.sha }}" \
+            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
+            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o none
           bash .github/scripts/wait-for-scm.sh "$APP_NAME"
       - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Deploy
         run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip
-      - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
-        name: Inject version app settings
-        run: |
-          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --settings \
-            APP_VERSION="${{ github.sha }}" \
-            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
-            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
       - if: ${{ env.DEPLOY_TEST == 'true' && env.RUN_JOB == 'true' }}
         name: Smoke + integration test
         run: |
@@ -216,23 +212,27 @@ jobs:
           echo "prod_pna=${PROD_PNA:-Disabled}" >> "$GITHUB_OUTPUT"
           bash .github/scripts/app-deploy-window.sh open "$RG" "$APP_NAME" "${{ steps.ip.outputs.ip }}" "$SLOT"
           az webapp config appsettings set -g "$RG" -n "$APP_NAME" --slot "$SLOT" --settings \
-            SCM_DO_BUILD_DURING_DEPLOYMENT=false -o none
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages" \
+            APP_VERSION="${{ github.sha }}" \
+            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
+            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o none
           bash .github/scripts/wait-for-scm.sh "$APP_NAME" "$SLOT"
       - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Deploy to staging slot
         run: bash .github/scripts/deploy-webapp.sh "$RG" "$APP_NAME" app.zip "$SLOT"
       - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
-        name: Inject version app settings (staging slot)
-        run: |
-          az webapp config appsettings set -g "$RG" -n "$APP_NAME" --slot "$SLOT" --settings \
-            APP_VERSION="${{ github.sha }}" \
-            SEMANTIC_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')" \
-            DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      - if: ${{ env.DEPLOY_PROD == 'true' && env.RUN_JOB == 'true' }}
         name: Smoke test staging slot
         run: |
+          URL="https://${APP_NAME}-${SLOT}.azurewebsites.net/health"
           for i in $(seq 1 10); do
-            if curl -fsS "https://${APP_NAME}-${SLOT}.azurewebsites.net/health"; then exit 0; fi
+            code="$(curl -s -o /tmp/staging-health.json -w "%{http_code}" "$URL" || echo "000")"
+            echo "Attempt ${i}/10: HTTP ${code}"
+            if [ "$code" = "200" ]; then
+              cat /tmp/staging-health.json
+              exit 0
+            fi
             sleep 30
           done
           echo "Staging smoke test failed — aborting before swap" && exit 1
